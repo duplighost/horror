@@ -539,7 +539,12 @@ export const Audio = (() => {
     if (rate) heart.rate = Math.max(heart.rate, rate);
   }
 
-  function fadeOut(time = 2) { if (master) master.gain.setTargetAtTime(0.0001, now(), time / 3); }
+  // Fade BOTH the dry master and the reverb return — one-shots send straight to
+  // the convolver, so fading master alone would let wet/reverb tails leak through.
+  function fadeOut(time = 2) {
+    if (master) master.gain.setTargetAtTime(0.0001, now(), time / 3);
+    if (revGain) revGain.gain.setTargetAtTime(0.0001, now(), time / 3);
+  }
   function fadeIn(time = 3) { if (master) { master.gain.cancelScheduledValues(now()); master.gain.setTargetAtTime(0.9, now(), time / 3); } }
 
   // Restore the whole mix after the ending faded it to silence. start() can't
@@ -548,6 +553,7 @@ export const Audio = (() => {
     if (!ctx) return;
     setMuffle(20000, 0.4);
     if (bed.gain) bed.gain.gain.setTargetAtTime(0.5, now(), 0.5);   // undo any ducking
+    if (revGain) revGain.gain.setTargetAtTime(0.7, now(), 0.5);     // restore reverb after a fadeOut
     heart.spike = 0; heart.rate = 60;
     tension = 0; targetTension = 0.12;
     fadeIn(2.5);

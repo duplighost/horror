@@ -22,21 +22,25 @@ export class Director {
     this.LOUD_GAP = 26;            // minimum seconds between full jump-scares
     this.chaseActive = false;
     this.ended = false;
-    this.objective = 'forest';
+    this.zone = 'forest';         // the level you are ACTUALLY in (set on load)
   }
 
   _nowS() { return performance.now() / 1000; }
   _canLoud() { return this._nowS() - this.lastLoud > this.LOUD_GAP && Audio.tension > 0.4; }
+  _wet() { return this.zone === 'basement' || this.zone === 'final'; }   // wet footsteps below ground
+
+  // called by main on every level load so dread logic knows where you are
+  enterZone(name) { this.zone = name; }
 
   setField(f) { this.field = f; }
 
-  // Full reset for a clean replay — clears the Presence, the objective, every
-  // timer, and any leftover player state (frozen / forced-look / dimmed torch).
+  // Full reset for a clean replay — clears the Presence, every timer, and any
+  // leftover player state (frozen / forced-look / dimmed torch). The zone is set
+  // separately by enterZone() on level load, so it's not forced here.
   reset() {
     this.entity.despawn(Audio, true);
     this.chaseActive = false;
     this.ended = false;
-    this.objective = 'forest';
     this.flickering = false; this.flickT = 0;
     this.dreadTimer = 4 + Math.random() * 4;
     this.lastLoud = -999;
@@ -44,8 +48,8 @@ export class Director {
     this.player.frozen = false; this.player.speedScale = 1; this.player.releaseLook();
   }
 
+  // a key was taken — nudge the tension up for the next leg of the descent
   setObjective(name) {
-    this.objective = name;
     if (name === 'mansion') Audio.setTension(0.35);
     if (name === 'basement') Audio.setTension(0.6);
   }
@@ -208,7 +212,7 @@ export class Director {
     else this._buildBeat(t);
 
     // tension simmers down between beats so it has room to rise again
-    Audio.setTension(Math.max(this.objective === 'forest' ? 0.12 : 0.34, Audio.tension - 0.06));
+    Audio.setTension(Math.max(this.zone === 'forest' ? 0.12 : 0.34, Audio.tension - 0.06));
   }
 
   _behind(dist = 3) {
@@ -222,7 +226,7 @@ export class Director {
 
   // a quiet dread cue, weighted by tension — never flashes the screen
   _softBeat(t) {
-    const wet = this.objective !== 'forest';
+    const wet = this._wet();
     const opts = [
       [3, () => Audio.whisper(this._behind())],
       [2, () => Audio.creak(this._near(10))],
@@ -275,7 +279,7 @@ export class Director {
     const step = () => {
       if (this.ended || d < 1.2) { if (d < 1.2) Audio.bumpHeart(0.4, 92); return; }
       const a = this.player.yaw + Math.PI;
-      Audio.footstep(new THREE.Vector3(this.player.pos.x + Math.sin(a) * d, 1, this.player.pos.z + Math.cos(a) * d), this.objective !== 'forest');
+      Audio.footstep(new THREE.Vector3(this.player.pos.x + Math.sin(a) * d, 1, this.player.pos.z + Math.cos(a) * d), this._wet());
       d -= 1.0;
       setTimeout(step, 360);
     };

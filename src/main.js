@@ -36,6 +36,9 @@ scene.add(ambient);
 
 const player = new Player();
 player.addToScene(scene);
+// The held flashlight/hand is parented to the camera; three.js only renders a
+// camera's children when the camera is part of the scene graph, so add it.
+scene.add(player.camera);
 const post = new Post(renderer);
 const controls = createControls(canvas);
 const interaction = new InteractionManager(UI, Audio);
@@ -114,6 +117,7 @@ function loadLevel(name, opts = {}) {
 
   director.setField(level.field);
   director.reset();
+  director.enterZone(name);        // dread logic must know the real current zone
   interaction.setLevel(ctx.interactables);
   activeTriggers = ctx.triggers;
   levelFlames = level.flames || [];
@@ -155,15 +159,20 @@ function updateTriggers() {
 }
 
 // --- ending / restart ---
+// The endcard has two possible meanings: the real ending (tap to replay) and the
+// context-loss watchdog (tap to reload). One handler, switched by this flag —
+// no duelling onclick/addEventListener.
+let endcardReload = false;
 function endGame() {
+  endcardReload = false;
   UI.showEnd('it is yours now');
 }
 UI.endcard.addEventListener('click', () => {
+  if (endcardReload) { location.reload(); return; }
   UI.hideEnd();
-  // soft restart: fresh inventory, Director + player state reset, post + mix
-  // restored (the ending faded audio to silence — bring it back).
+  // soft restart: fresh inventory, post + mix restored (the ending faded audio
+  // to silence — bring it back). loadLevel resets the Director and zone.
   ctx.inventory.clear();
-  director.reset();
   post.set('dread', 0); post.set('tunnel', 0); post.set('desat', 0.25); post.set('aberration', 0.0015);
   Audio.stopCrescendo(); Audio.resetMix();
   loadLevel('forest');
@@ -228,7 +237,7 @@ canvas.addEventListener('webglcontextlost', (e) => {
 }, false);
 canvas.addEventListener('webglcontextrestored', () => {
   glLost = false;
-  UI.hideEnd(); UI.endcard.onclick = null;   // dismiss any watchdog "wake" prompt
+  endcardReload = false; UI.hideEnd();        // dismiss any watchdog "wake" prompt
   post.onContextRestored();
   renderer.shadowMap.enabled = Quality.shadows && degradeStep < 1;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -242,9 +251,9 @@ canvas.addEventListener('webglcontextrestored', () => {
 }, false);
 // safety net: if a lost context never comes back, let the player wake it
 function glWatchdog() {
-  if (glLost && performance.now() - glLostAt > 7000) {
+  if (glLost && performance.now() - glLostAt > 7000 && !endcardReload) {
+    endcardReload = true;
     UI.showEnd('the dark swallowed the light', '↻ wake');
-    UI.endcard.onclick = () => location.reload();
   }
 }
 

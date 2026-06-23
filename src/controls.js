@@ -174,6 +174,19 @@ export function createControls(canvas) {
   function consumeLook() { const l = { dx: state._look.dx, dy: state._look.dy }; state._look.dx = 0; state._look.dy = 0; return l; }
   function consumeInteract() { const v = state._interact; state._interact = false; return v; }
 
+  // Drop all held input. Without this, a key/stick held when the window loses
+  // focus never gets its release event and the player drifts forever.
+  function resetInput() {
+    for (const k in keys) keys[k] = false;
+    state.move.x = 0; state.move.y = 0; state.run = false;
+    state._look.dx = 0; state._look.dy = 0; state.aiming = false;
+    for (const id in tapInfo) delete tapInfo[id];
+    for (const which of ['move', 'look']) { if (sticks[which]) { sticks[which] = null; showStick(which, 0, 0, 0, 0, false); } }
+  }
+  window.addEventListener('blur', resetInput);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) resetInput(); });
+  document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement !== canvas) resetInput(); });
+
   return {
     state, update, consumeLook, consumeInteract, lock,
     get locked() { return state.locked; },
