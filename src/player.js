@@ -18,6 +18,8 @@ export class Player {
     this.stamina = 1;
     this.field = null;          // ColliderField, set per level
     this.height = CFG.eyeHeight;
+    this.crawl = false;         // set by crawl-space triggers; lowers the eye + slows
+    this.eyeNow = CFG.eyeHeight; // smoothed eye height
     this.frozen = false;        // director can lock the player for a beat
     this.lookFrozen = false;
     this.speedScale = 1;        // dread can make limbs heavy
@@ -146,7 +148,7 @@ export class Player {
     const running = controls.state.run && this.stamina > 0.05 && (wishX || wishZ);
     if (running) this.stamina = Math.max(0, this.stamina - dt * 0.32);
     else this.stamina = Math.min(1, this.stamina + dt * 0.18);
-    const speed = (running ? CFG.runSpeed : CFG.walkSpeed) * this.speedScale;
+    const speed = (running ? CFG.runSpeed : CFG.walkSpeed) * this.speedScale * (this.crawl ? 0.45 : 1);
 
     // accelerate toward wish velocity
     const targetVX = wishX * speed, targetVZ = wishZ * speed;
@@ -188,8 +190,9 @@ export class Player {
     this.shake *= Math.pow(0.0009, dt); // fast decay
     this._shakeV.set((Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5)).multiplyScalar(this.shake * 0.18);
 
-    // --- compose camera transform ---
-    const eye = this.height + bob + breath;
+    // --- compose camera transform (eye lowers smoothly when crawling) ---
+    this.eyeNow += ((this.crawl ? 0.5 : this.height) - this.eyeNow) * Math.min(1, dt * 7);
+    const eye = this.eyeNow + bob * (this.crawl ? 0.4 : 1) + breath;
     this.camera.position.set(this.pos.x + sway, eye, this.pos.z);
     this.camera.position.add(this._shakeV);
     const euler = new THREE.Euler(this.pitch + this._shakeV.z * 0.4, this.yaw, sway * 0.6, 'YXZ');

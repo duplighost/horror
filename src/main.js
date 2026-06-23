@@ -113,7 +113,7 @@ function loadLevel(name, opts = {}) {
 
   player.field = level.field;
   player.teleport(level.spawn.x, level.spawn.z, level.spawn.yaw);
-  player.pitch = 0; player.speedScale = 1; player.frozen = false; player.flashOn = true; player.releaseLook();
+  player.pitch = 0; player.speedScale = 1; player.frozen = false; player.flashOn = true; player.crawl = false; player.releaseLook();
 
   director.setField(level.field);
   director.reset();

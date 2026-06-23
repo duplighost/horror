@@ -116,6 +116,23 @@ export class Director {
     Audio.setTension(0.7);
   }
 
+  // A waking nightmare: something horrifying is RIGHT THERE — then a blink, and
+  // it was never there at all. No white flash; this one creeps and crushes.
+  hallucinate(x, z) {
+    if (this.ended || this.entity.isVisible) return;
+    const p = this.player;
+    this.entity.spawnAt(x, z, p.pos.x, p.pos.z, 'idle', { dwell: 9 });   // looms, won't auto-vanish
+    Audio.stinger('growl'); Audio.bumpHeart(0.9, 110);
+    this.ctx.post.set('dread', 0.75); this.ctx.post.set('tunnel', 0.5); this.ctx.post.set('desat', 0.55);
+    p.addShake(0.7); this.ctx.ui.buzz([60, 40, 110]);
+    setTimeout(() => {
+      if (this.ended) return;
+      this.ctx.ui.blink(90, 360);
+      this.entity.despawn(Audio, true);
+      this.ctx.post.set('dread', 0); this.ctx.post.set('tunnel', 0); this.ctx.post.set('desat', 0.25);
+    }, 1150);
+  }
+
   startChase(x, z) {
     if (this.ended) return;
     this.chaseActive = true;

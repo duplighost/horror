@@ -223,6 +223,26 @@ export function buildMansion(ctx) {
   for (const gz of [PZ - 2.6, PZ + 2.6]) { const gp = makeGrandPainting(((gz | 0) % 8) + 1, 1.0, 1.45); gp.position.set(wWall + 0.1, 1.8, gz); gp.rotation.y = Math.PI / 2; group.add(gp); }
   const gpN = makeGrandPainting(6, 1.2, 1.6); gpN.position.set(PX + 4.8, 1.9, nWall + 0.1); group.add(gpN);
 
+  // --- a collapsed passage you must crawl under (SE corner of the parlor). A
+  //     faint light at the dead end lures you in; as you reach it, the world
+  //     turns horrifying — then a blink, and it's just an empty nook. ---
+  const CR = { x: 8.0, z0: 6.0, z1: 9.6, hw: 0.85 };
+  const debrisMat = new THREE.MeshStandardMaterial({ color: 0x1a140e, roughness: 0.95 });
+  const lowCeil = new THREE.Mesh(new THREE.BoxGeometry(CR.hw * 2 + 0.4, 0.35, CR.z1 - CR.z0 + 0.2), debrisMat);
+  lowCeil.position.set(CR.x, 0.98, (CR.z0 + CR.z1) / 2); lowCeil.castShadow = true; group.add(lowCeil);
+  for (const sx of [-1, 1]) {
+    const w = new THREE.Mesh(new THREE.BoxGeometry(0.3, H, CR.z1 - CR.z0 + 0.2), debrisMat);
+    w.position.set(CR.x + sx * (CR.hw + 0.15), H / 2, (CR.z0 + CR.z1) / 2); group.add(w);
+    field.addBox(CR.x + sx * (CR.hw + 0.15) - 0.15, CR.z0, CR.x + sx * (CR.hw + 0.15) + 0.15, CR.z1, 2);
+  }
+  const crBack = new THREE.Mesh(new THREE.BoxGeometry(CR.hw * 2 + 0.4, H, 0.3), debrisMat);
+  crBack.position.set(CR.x, H / 2, CR.z1); group.add(crBack);
+  field.addBox(CR.x - CR.hw - 0.2, CR.z1 - 0.15, CR.x + CR.hw + 0.2, CR.z1 + 0.15, 2);
+  const fallen = makeShelf(2.2); fallen.position.set(CR.x - 0.5, 1.1, CR.z0 - 0.2); fallen.rotation.set(0, 0.3, Math.PI / 2 + 0.1); group.add(fallen);
+  for (let i = 0; i < 5; i++) { const r = new THREE.Mesh(new THREE.IcosahedronGeometry(0.14 + rand() * 0.2, 0), debrisMat); r.position.set(CR.x + (rand() - 0.5) * 1.3, 0.1, CR.z0 + rand() * (CR.z1 - CR.z0)); group.add(r); }
+  const lure = makeFlame(0xffb050, 0.4, 3); lure.position.set(CR.x, 0.35, CR.z1 - 0.5); group.add(lure); flames.push(lure);
+  ctx.triggers.push({ x: CR.x, z: CR.z1 - 0.9, r: 1.1, once: true, onEnter: (c) => c.director.hallucinate(CR.x, CR.z1 - 0.2) });
+
   // --- chandeliers + blood, for that old-blood-and-dust grandeur ---
   const bloodTex = softDot('#1f0202');
   function blood(x, z, s = 1) {
@@ -283,6 +303,9 @@ export function buildMansion(ctx) {
     const ud = bDoor.userData; ud.angle += (ud.targetAngle - ud.angle) * Math.min(1, dt * 2.2); bDoor.rotation.y = ud.angle;
     doorGlow.intensity = 5 + Math.sin(t * 4) * 1.6 + Math.random() * 0.6;
     if (seam.visible) seam.material.opacity = 0.4 + Math.sin(t * 3) * 0.15;
+    // crouch while inside the collapsed crawl-space
+    player.crawl = player.pos.x > CR.x - CR.hw - 0.05 && player.pos.x < CR.x + CR.hw + 0.05 &&
+                   player.pos.z > CR.z0 - 0.1 && player.pos.z < CR.z1;
   }
 
   return {
