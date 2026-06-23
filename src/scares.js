@@ -152,16 +152,17 @@ export class Director {
     Audio.setTension(0.55);
   }
   caught() {
-    // not a death — a violent slip that throws you onward
+    // not a death — a violent blink, then the Presence is flung back a few
+    // metres so you get a moment to keep fleeing. (We do NOT teleport the
+    // player: a blind shove could push you through a wall into the void.)
     this.stinger('shriekHard');
     this.ctx.ui.blink(120, 400);
     Audio.setMuffle(500, 0.1);
     setTimeout(() => Audio.setMuffle(20000, 1.5), 600);
-    // shove the player a few metres along their facing so they keep fleeing
-    const p = this.player, a = p.yaw;
     setTimeout(() => {
-      p.teleport(p.pos.x - Math.sin(a) * 3, p.pos.z - Math.cos(a) * 3, a);
-      if (this.chaseActive) this.entity.spawnAt(p.pos.x + Math.sin(a) * 8, p.pos.z + Math.cos(a) * 8, p.pos.x, p.pos.z, 'chase', { speed: 3.4, onReach: () => this.caught() });
+      if (!this.chaseActive || this.ended) return;
+      const p = this.player, a = p.yaw;          // behind the player, in the maze
+      this.entity.spawnAt(p.pos.x + Math.sin(a) * 7, p.pos.z + Math.cos(a) * 7, p.pos.x, p.pos.z, 'chase', { speed: 3.4, onReach: () => this.caught() });
     }, 250);
   }
 
@@ -311,8 +312,9 @@ export class Director {
     Audio.bumpHeart(0.7, 100);
     const a = p.yaw + (Math.random() - 0.5) * 0.6;
     setTimeout(() => {
+      p.flashOn = true;            // restore FIRST, so nothing below can leave you blind
+      if (this.ended) return;
       this.entity.spawnAt(p.pos.x + Math.sin(a) * 3, p.pos.z + Math.cos(a) * 3, p.pos.x, p.pos.z, 'idle', { dwell: 0.1 });
-      p.flashOn = true;
       this.stinger(Math.random() < 0.5 ? 'breath' : 'shriek');
     }, 500 + Math.random() * 500);
   }

@@ -97,11 +97,12 @@ export class Player {
     this.flashlight.target = this.flashTarget;
 
     // a faint warm fill at the lens so nearby surfaces and your "presence" read
-    this.lens = new THREE.PointLight(0xffe0c0, 6.0, 4.5, 2);
+    this.lens = new THREE.PointLight(0xffe0c0, 4.0, 4.0, 2);
 
     // the held cone is swayed with a little lag for a handheld feel
     this._aimDir = new THREE.Vector3(0, 0, -1);
     this.flashOn = true;
+    this._offSince = 0;         // wall-clock ms when the torch went off (watchdog)
     this.baseIntensity = f.intensity;
     this.flicker = 1;           // multiplier driven by scare system
   }
@@ -224,9 +225,17 @@ export class Player {
     this.flashlight.position.copy(fpos).addScaledVector(this.camera.up, -0.05);
     this.flashTarget.position.copy(fpos).addScaledVector(this._aimDir, 8);
     this.lens.position.copy(fpos).addScaledVector(this.forward, 0.2);
+    // safety net: the torch may never stay off longer than a scripted blackout.
+    // Wall-clock based (frame-rate independent), so if anything leaves it off (a
+    // scare's restore failing, a level slip) it force-returns after ~2.2s and you
+    // can never end up permanently blind and stuck.
+    if (this.flashOn) { this._offSince = 0; }
+    else if (this._offSince === 0) { this._offSince = performance.now(); }
+    else if (performance.now() - this._offSince > 2200) { this.flashOn = true; }
+
     const inten = this.flashOn ? this.baseIntensity * this.flicker : 0;
     this.flashlight.intensity = inten;
-    this.lens.intensity = this.flashOn ? 6.0 * this.flicker : 0;
+    this.lens.intensity = this.flashOn ? 4.0 * this.flicker : 0;
 
     // --- viewmodel bob/sway (lags the camera, breathes, dims with the torch) ---
     if (this.viewmodel) {

@@ -58,8 +58,8 @@ export const CFG = {
   flashlight: {
     angle: 0.62,          // radians (cone half-angle-ish)
     penumbra: 0.45,
-    intensity: 650.0,
-    distance: 50,
+    intensity: 500.0,
+    distance: 48,
     color: 0xffeccb,
   },
 
