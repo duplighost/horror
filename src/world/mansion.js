@@ -126,33 +126,47 @@ export function buildMansion(ctx) {
   // a candle by the key so you can find it
   const kc = makeFlame(0xffaa44, 1.0, 6); kc.position.set(keyPos.x + 0.5, 0.95, keyPos.z); group.add(kc); flames.push(kc);
 
-  // --- the basement door: a thing you cannot miss. Tall, ornate, set in a stone
-  //     archway, with cold red light bleeding from every gap and candelabra to
-  //     either side. The red glow reads as a beacon down the corridors. ---
+  // --- the basement door: a thing you cannot miss. Tall, ornate, set FLUSH into
+  //     the wall opposite the room's only opening, with cold red light bleeding
+  //     from the seam and candelabra to either side. ---
   const dpx = cw(doorCell[0]), dpz = cw(doorCell[1]);
-  const stairHole = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 2.4), new THREE.MeshStandardMaterial({ color: 0x000000 }));
-  stairHole.position.set(dpx, 0.02, dpz); group.add(stairHole);
-  for (let i = 0; i < 5; i++) {
-    const step = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.18, 0.4), new THREE.MeshStandardMaterial({ color: 0x0a0908, roughness: 1 }));
-    step.position.set(dpx, -0.1 - i * 0.18, dpz - 0.6 - i * 0.4); group.add(step);
-  }
-  // ornate stone archway surround
+  const dc = cells[doorCell[0]][doorCell[1]];
+  const openDir = dc.N ? 'N' : dc.E ? 'E' : dc.S ? 'S' : 'W';           // the single open side
+  const backDir = ({ N: 'S', S: 'N', E: 'W', W: 'E' })[openDir];        // closed wall we mount on
+  let nx = 0, nz = 0, wallX = dpx, wallZ = dpz;                          // inward normal + wall centre
+  if (backDir === 'N') { nz = 1; wallZ = dpz - CELL / 2; }
+  else if (backDir === 'S') { nz = -1; wallZ = dpz + CELL / 2; }
+  else if (backDir === 'E') { nx = -1; wallX = dpx + CELL / 2; }
+  else { nx = 1; wallX = dpx - CELL / 2; }
+  // assembly built in local space: local +Z points INTO the room, -Z is behind
+  // the wall (the descent). Then rotated to align with the real wall.
+  const dg = new THREE.Group(); dg.position.set(wallX, 0, wallZ); dg.rotation.y = Math.atan2(nx, nz); group.add(dg);
   const archMat = new THREE.MeshStandardMaterial({ color: 0x1a1512, roughness: 0.8, metalness: 0.2 });
-  for (const sx of [-1, 1]) { const col = new THREE.Mesh(new THREE.BoxGeometry(0.32, 3.0, 0.5), archMat); col.position.set(dpx + sx * 1.2, 1.5, dpz - 1.0); group.add(col); }
-  const arch = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.5, 0.5), archMat); arch.position.set(dpx, 3.0, dpz - 1.0); group.add(arch);
-  const keystone = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.4, 4), archMat); keystone.rotation.y = Math.PI / 4; keystone.position.set(dpx, 3.3, dpz - 1.0); group.add(keystone);
+  for (const sx of [-1, 1]) { const col = new THREE.Mesh(new THREE.BoxGeometry(0.32, 3.0, 0.5), archMat); col.position.set(sx * 1.2, 1.5, 0.05); dg.add(col); }
+  const archTop = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.5, 0.5), archMat); archTop.position.set(0, 3.0, 0.05); dg.add(archTop);
+  const keystone = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.4, 4), archMat); keystone.rotation.y = Math.PI / 4; keystone.position.set(0, 3.3, 0.05); dg.add(keystone);
+  // darkness + a few steps descending behind the wall
+  for (let i = 0; i < 5; i++) { const step = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.18, 0.4), new THREE.MeshStandardMaterial({ color: 0x0a0908, roughness: 1 })); step.position.set(0, -0.1 - i * 0.18, -0.5 - i * 0.4); dg.add(step); }
+  const darkOpening = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.7, 0.1), new THREE.MeshBasicMaterial({ color: 0x000000 })); darkOpening.position.set(0, 1.35, -0.18); dg.add(darkOpening);
   // the door itself, dark with a red-glowing seam
-  const bDoor = makeDoor(2.0, 2.7); bDoor.position.set(dpx - 1.0, 0, dpz - 1.0); group.add(bDoor);
+  const bDoor = makeDoor(2.0, 2.7); bDoor.position.set(-1.0, 0, 0.0); dg.add(bDoor);
   const seam = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 2.7), new THREE.MeshBasicMaterial({ color: 0xff1408, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
-  seam.position.set(dpx, 1.35, dpz - 1.08); group.add(seam);
-  const doorGlow = new THREE.PointLight(0xff1206, 6, 8, 2); doorGlow.position.set(dpx, 1.2, dpz - 1.5); group.add(doorGlow);
-  const sill = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.6), new THREE.MeshBasicMaterial({ color: 0xff1810, transparent: true, opacity: 0.6 }));
-  sill.rotation.x = -Math.PI / 2; sill.position.set(dpx, 0.02, dpz - 0.6); group.add(sill);   // red light pooling at the threshold
-  // candelabra flanking the door
-  for (const sx of [-1, 1]) { const ca = makeCandelabra(); ca.position.set(dpx + sx * 1.55, 0, dpz - 0.3); group.add(ca); (ca.userData.flames || []).forEach((f) => flames.push(f)); field.addCircle(dpx + sx * 1.55, dpz - 0.3, 0.3); }
-  const bDoorBlocker = field.addDynamicBox(dpx - 1.1, dpz - 1.2, dpx + 1.1, dpz - 0.8, 2);
+  seam.position.set(0, 1.35, 0.07); dg.add(seam);
+  const doorGlow = new THREE.PointLight(0xff1206, 6, 8, 2); doorGlow.position.set(0, 1.2, -0.4); dg.add(doorGlow);
+  const sill = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.7), new THREE.MeshBasicMaterial({ color: 0xff1810, transparent: true, opacity: 0.6 }));
+  sill.rotation.x = -Math.PI / 2; sill.position.set(0, 0.02, 0.55); dg.add(sill);
+  // candelabra flanking the door (just inside the room)
+  const w = (lx, lz) => [wallX + lx * nz + lz * nx, wallZ - lx * nx + lz * nz];
+  for (const sx of [-1, 1]) {
+    const ca = makeCandelabra(); ca.position.set(sx * 1.55, 0, 0.45); dg.add(ca);
+    (ca.userData.flames || []).forEach((f) => flames.push(f));
+    const [cwx, cwz] = w(sx * 1.55, 0.45); field.addCircle(cwx, cwz, 0.28);
+  }
+  const hx = Math.abs(nz) * 1.0 + Math.abs(nx) * 0.25, hz = Math.abs(nx) * 1.0 + Math.abs(nz) * 0.25;
+  const bDoorBlocker = field.addDynamicBox(wallX - hx, wallZ - hz, wallX + hx, wallZ + hz, 2);
+  const [doorWx, doorWz] = w(0, 0.4);
   ctx.interactables.push({
-    object: bDoor, pos: new THREE.Vector3(dpx, 1.35, dpz - 1.0), radius: 2.4, focusable: true,
+    object: bDoor, pos: new THREE.Vector3(doorWx, 1.35, doorWz), radius: 2.4, focusable: true,
     canUse: (state) => state.inventory.has('brasskey'),
     lockedHint: true,
     onUse: (state, c) => {
@@ -162,7 +176,8 @@ export function buildMansion(ctx) {
     },
   });
   // a cold draft + far heartbeat as you near the door
-  ctx.triggers.push({ x: dpx, z: dpz + CELL * 0.7, r: 2.2, once: true, onEnter: (c) => { c.audio.whisper(new THREE.Vector3(dpx, 1, dpz - 1)); c.audio.bumpHeart(0.4, 88); } });
+  const [draftX, draftZ] = w(0, 1.6);
+  ctx.triggers.push({ x: draftX, z: draftZ, r: 2.2, once: true, onEnter: (c) => { c.audio.whisper(new THREE.Vector3(doorWx, 1, doorWz)); c.audio.bumpHeart(0.4, 88); } });
 
   // --- furnish rooms & hang portraits on closed walls ---
   const portraits = [];
