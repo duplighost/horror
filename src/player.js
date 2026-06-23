@@ -33,31 +33,50 @@ export class Player {
     this.forward = new THREE.Vector3(0, 0, -1);
   }
 
-  // a held flashlight + hand, parented to the camera (cosmetic, lit by the lens)
+  // A held flashlight gripped in a fist, parented to the camera. It is UNLIT
+  // (MeshBasic) — the torch beam starts right at the camera and would otherwise
+  // blast it to solid white, so we paint fixed dark tones instead and let only
+  // the lens glow. Reads as a dark flashlight + hand silhouette with a bright eye.
   _buildViewmodel() {
     const vm = new THREE.Group();
-    const metal = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.4, metalness: 0.8 });
-    const skin = new THREE.MeshStandardMaterial({ color: 0x6a4a3a, roughness: 0.9 });
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.03, 0.2, 12), metal);
-    body.rotation.x = Math.PI / 2; body.position.set(0, 0, -0.06); vm.add(body);
-    const head = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.034, 0.07, 14), metal);
-    head.rotation.x = Math.PI / 2; head.position.set(0, 0, -0.18); vm.add(head);
-    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.045, 14),
-      new THREE.MeshStandardMaterial({ color: 0xfff2d0, emissive: 0xffdca0, emissiveIntensity: 2.2, roughness: 0.3 }));
-    lens.position.set(0, 0, -0.214); vm.add(lens);
-    // a fist gripping the barrel
-    const palm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.07, 0.09), skin);
-    palm.position.set(0, -0.015, -0.02); vm.add(palm);
-    for (let i = 0; i < 4; i++) {
-      const f = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.03, 0.05), skin);
-      f.position.set(-0.03 + i * 0.02, 0.02, -0.03); f.rotation.x = -0.5; vm.add(f);
-    }
-    const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.05, 0.025), skin);
-    thumb.position.set(0.04, 0.0, -0.01); thumb.rotation.z = 0.5; vm.add(thumb);
+    const B = (c) => new THREE.MeshBasicMaterial({ color: c });
+    const body = B(0x303338), grip = B(0x191b1e), head = B(0x3a3e44);
+    const skin = B(0x2e2017), skinHi = B(0x42301f);
+    this._vmLensMat = B(0xffe9c2);                    // dimmed by flicker in update
 
-    vm.position.set(0.22, -0.22, -0.42);
-    vm.rotation.set(0.05, -0.12, 0);
-    vm.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.033, 0.2, 16), body);
+    barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0, -0.02); vm.add(barrel);
+    const gripMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.085, 16), grip);
+    gripMesh.rotation.x = Math.PI / 2; gripMesh.position.set(0, 0, 0.03); vm.add(gripMesh);
+    const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.031, 0.03, 14), body);
+    tail.rotation.x = Math.PI / 2; tail.position.set(0, 0, 0.088); vm.add(tail);
+    const headMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.034, 0.06, 18), head);
+    headMesh.rotation.x = Math.PI / 2; headMesh.position.set(0, 0, -0.15); vm.add(headMesh);
+    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.048, 20), this._vmLensMat);
+    lens.position.set(0, 0, -0.181); vm.add(lens);
+    // a faint glow disc behind the lens so it reads as a light source
+    const halo = new THREE.Mesh(new THREE.CircleGeometry(0.075, 20), new THREE.MeshBasicMaterial({ color: 0xffcf87, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false }));
+    halo.position.set(0, 0, -0.185); vm.add(halo); this._vmHalo = halo;
+
+    // fist gripping the barrel
+    const hand = new THREE.Group();
+    const backHand = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.055, 0.075), skin);
+    backHand.position.set(-0.005, -0.05, 0.03); hand.add(backHand);
+    for (let i = 0; i < 4; i++) {
+      const fg = new THREE.Mesh(new THREE.CapsuleGeometry(0.0125, 0.05, 3, 6), skinHi);
+      fg.rotation.x = Math.PI / 2 - 0.1;
+      fg.position.set(-0.03 + i * 0.02, -0.012, 0.05 - i * 0.004); hand.add(fg);
+    }
+    const knuck = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.02, 0.05), skinHi);
+    knuck.position.set(-0.005, 0.006, 0.04); hand.add(knuck);
+    const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.013, 0.04, 3, 6), skinHi);
+    thumb.rotation.set(1.1, 0, -0.6); thumb.position.set(0.042, -0.025, 0.04); hand.add(thumb);
+    vm.add(hand);
+
+    vm.position.set(0.19, -0.25, -0.5);
+    vm.rotation.set(0.16, -0.18, 0.06);
+    vm.scale.setScalar(0.92);
+    vm.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.renderOrder = 10; } });
     this.viewmodel = vm;
     this.camera.add(vm);
     this._vmBase = vm.position.clone();
@@ -218,8 +237,9 @@ export class Player {
       this.viewmodel.position.set(b.x + bobX - look.dx * 0.6, b.y + bobY + breathe + look.dy * 0.5, b.z);
       this.viewmodel.rotation.set(0.05 + look.dy * 0.6, -0.12 - look.dx * 0.8, look.dx * 0.4);
       this.viewmodel.visible = this.flashOn;
-      const lensMat = this.viewmodel.children[2].material;
-      if (lensMat) lensMat.emissiveIntensity = this.flashOn ? 2.2 * this.flicker : 0;
+      const f = this.flashOn ? this.flicker : 0;
+      if (this._vmLensMat) this._vmLensMat.color.setRGB(f, 0.92 * f, 0.76 * f);  // lens dims/dies with the torch
+      if (this._vmHalo) this._vmHalo.material.opacity = 0.35 * f;
     }
 
     return { running, horizSpeed, hitWall, moving };
