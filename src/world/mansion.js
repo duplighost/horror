@@ -63,7 +63,7 @@ export function buildMansion(ctx) {
     if (inParlor(x, y) && inParlor(x, y + 1)) { /* open hall */ }
     else if (!c.S) addWall(cw(x), cw(y) + CELL / 2, CELL, TH);
     else if (y < rows - 1) lintelXf.push({ x: cw(x), z: cw(y) + CELL / 2, sx: CELL, sz: TH + 0.12 });
-    if (x === 0 && !c.W) addWall(cw(x) - CELL / 2, cw(y), TH, CELL);
+    if (x === 0 && !c.W && y !== 0) addWall(cw(x) - CELL / 2, cw(y), TH, CELL);   // (0,0) west left open for the fake wall
     if (y === 0 && !c.N) addWall(cw(x), cw(y) - CELL / 2, CELL, TH);
   }
   const wallMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, H, 1), wallMat, wallXf.length);
@@ -242,6 +242,44 @@ export function buildMansion(ctx) {
   for (let i = 0; i < 5; i++) { const r = new THREE.Mesh(new THREE.IcosahedronGeometry(0.14 + rand() * 0.2, 0), debrisMat); r.position.set(CR.x + (rand() - 0.5) * 1.3, 0.1, CR.z0 + rand() * (CR.z1 - CR.z0)); group.add(r); }
   const lure = makeFlame(0xffb050, 0.4, 3); lure.position.set(CR.x, 0.35, CR.z1 - 0.5); group.add(lure); flames.push(lure);
   ctx.triggers.push({ x: CR.x, z: CR.z1 - 0.9, r: 1.1, once: true, onEnter: (c) => c.director.hallucinate(CR.x, CR.z1 - 0.2) });
+
+  // --- the fake wall (NW corner). It looks like the rest of the wall but you
+  //     walk straight through it into a forgotten room. Nothing is there... and
+  //     when you turn to leave, IT is in the doorway, and the wall has sealed. ---
+  const fwx = cw(0) - CELL / 2;                 // west boundary, cell (0,0)
+  const fake = new THREE.Mesh(new THREE.BoxGeometry(TH, H, CELL), wallMat);
+  fake.position.set(fwx, H / 2, cw(0)); fake.castShadow = true; fake.receiveShadow = true; group.add(fake);
+  const fakeWain = new THREE.Mesh(new THREE.BoxGeometry(TH + 0.06, 0.95, CELL + 0.06), wainMat);
+  fakeWain.position.set(fwx, 0.48, cw(0)); group.add(fakeWain);
+  const fakeSeam = new THREE.Mesh(new THREE.PlaneGeometry(0.02, H * 0.8), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+  fakeSeam.position.set(fwx - TH / 2 - 0.001, H / 2, cw(0) + 0.7); fakeSeam.rotation.y = Math.PI / 2; group.add(fakeSeam);  // a hairline crack hints at it
+  const fakeBlocker = field.addDynamicBox(fwx - TH / 2, cw(0) - CELL / 2, fwx + TH / 2, cw(0) + CELL / 2, 2);
+  fakeBlocker.active = false;                   // passable until the scare seals it
+
+  // the hidden room beyond
+  const aMat = new THREE.MeshStandardMaterial({ map: wallpaperTexture(), roughness: 0.95 });
+  const ax0 = fwx - 3.0, ax1 = fwx, az0 = cw(0) - CELL / 2, az1 = cw(0) + CELL / 2;
+  const aFloor = new THREE.Mesh(new THREE.PlaneGeometry(ax1 - ax0, az1 - az0), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.5 }));
+  aFloor.rotation.x = -Math.PI / 2; aFloor.position.set((ax0 + ax1) / 2, 0, cw(0)); aFloor.receiveShadow = true; group.add(aFloor);
+  const aCeil = new THREE.Mesh(new THREE.PlaneGeometry(ax1 - ax0, az1 - az0), new THREE.MeshStandardMaterial({ color: 0x0c0a09 }));
+  aCeil.rotation.x = Math.PI / 2; aCeil.position.set((ax0 + ax1) / 2, H, cw(0)); group.add(aCeil);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(TH, H, az1 - az0), aMat); back.position.set(ax0, H / 2, cw(0)); group.add(back); field.addBox(ax0 - TH / 2, az0, ax0 + TH / 2, az1, 2);
+  for (const z of [az0, az1]) { const s = new THREE.Mesh(new THREE.BoxGeometry(ax1 - ax0, H, TH), aMat); s.position.set((ax0 + ax1) / 2, H / 2, z); group.add(s); field.addBox(ax0, z - TH / 2, ax1, z + TH / 2, 2); }
+  // a single chair, faced into the corner — someone sat here
+  const chair = makeChair(); chair.position.set(ax0 + 0.7, 0, cw(0) - 1.0); chair.rotation.y = -Math.PI / 2 - 0.3; group.add(chair);
+  const aSmear = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 1.7), new THREE.MeshStandardMaterial({ map: softDot('#1f0202'), transparent: true, opacity: 0.7, depthWrite: false }));
+  aSmear.position.set(ax0 + 0.06, 1.1, cw(0) + 1.0); aSmear.rotation.y = Math.PI / 2; group.add(aSmear);
+
+  // a cold draft hints the wall is wrong as you pass it
+  ctx.triggers.push({ x: fwx + 0.8, z: cw(0), r: 1.6, cooldown: 12, onEnter: (c) => { c.audio.whisper(new THREE.Vector3(fwx, 1.4, cw(0))); } });
+  // reach the far end -> nothing... then the seal-and-scare when you turn back
+  ctx.triggers.push({ x: ax0 + 0.9, z: cw(0), r: 1.2, once: true, onEnter: (c) => {
+    const ent = c.director.entity;
+    ent.spawnAt(fwx - 0.2, cw(0), c.player.pos.x, c.player.pos.z, 'idle', { dwell: 4 });
+    fakeBlocker.active = true; fake.material = wallMat;
+    c.director.stinger('shriek');
+    setTimeout(() => { fakeBlocker.active = false; ent.despawn(c.audio, true); }, 2800);
+  }});
 
   // --- chandeliers + blood, for that old-blood-and-dust grandeur ---
   const bloodTex = softDot('#1f0202');

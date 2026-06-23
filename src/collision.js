@@ -63,6 +63,13 @@ export class ColliderField {
         const cz = Math.max(b.minz, Math.min(pz, b.maxz));
         const dx = px - cx, dz = pz - cz, d = Math.hypot(dx, dz);
         if (d < r && d > 0.00001) { const push = r - d; px += (dx / d) * push; pz += (dz / d) * push; moved = true; hit = true; tag = b.tag; }
+        else if (d <= 0.00001) {   // centre inside the box (e.g. a wall sealing onto you): push out the short axis
+          const left = px - b.minx, right = b.maxx - px, up = pz - b.minz, down = b.maxz - pz;
+          const m = Math.min(left, right, up, down);
+          if (m === left) px = b.minx - r; else if (m === right) px = b.maxx + r;
+          else if (m === up) pz = b.minz - r; else pz = b.maxz + r;
+          moved = true; hit = true; tag = b.tag;
+        }
       }
       for (const v of cands) {
         const type = v >>> 24, idx = v & 0xFFFFFF;
