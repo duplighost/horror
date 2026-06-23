@@ -168,3 +168,71 @@ export function makeGravestone() {
   g.rotation.z = (Math.random() - 0.5) * 0.2; g.castShadow = true; g.receiveShadow = true;
   return g;
 }
+
+// --- grand parlor furnishings (once-comfortable, now rotting) -----------------
+export function makeCouch(w = 1.9, d = 0.85) {
+  const g = new THREE.Group();
+  const fab = clothMat(0x3a2a30);                 // faded burgundy velvet
+  const base = new THREE.Mesh(new THREE.BoxGeometry(w, 0.4, d), fab); base.position.y = 0.3; g.add(base);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(w, 0.62, 0.18), fab); back.position.set(0, 0.61, -d / 2 + 0.09); g.add(back);
+  for (const sx of [-1, 1]) { const arm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.5, d), fab); arm.position.set(sx * (w / 2 - 0.09), 0.45, 0); g.add(arm); }
+  const n = Math.max(1, Math.round(w / 0.7));
+  for (let i = 0; i < n; i++) { const cu = new THREE.Mesh(new THREE.BoxGeometry(w / n - 0.06, 0.16, d - 0.26), fab); cu.position.set(-w / 2 + (i + 0.5) * (w / n), 0.52, 0.05); g.add(cu); }
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  return g;
+}
+export function makeArmchair() { return makeCouch(0.95, 0.82); }
+
+export function makeRug(w = 3.4, d = 2.4) {
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(w, 0.02, d), clothMat(0x281218)); base.position.y = 0.011; base.receiveShadow = true; g.add(base);
+  const inner = new THREE.Mesh(new THREE.BoxGeometry(w - 0.4, 0.024, d - 0.4), clothMat(0x4a2a22)); inner.position.y = 0.013; g.add(inner);
+  const medallion = new THREE.Mesh(new THREE.CylinderGeometry(Math.min(w, d) * 0.28, Math.min(w, d) * 0.28, 0.026, 16), clothMat(0x321c22)); medallion.position.y = 0.015; g.add(medallion);
+  return g;
+}
+
+export function makeFireplace() {
+  const g = new THREE.Group();
+  const stone = new THREE.MeshStandardMaterial({ color: 0x2c2a2a, roughness: 0.95 });
+  for (const sx of [-1, 1]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.34, 1.6, 0.5), stone); leg.position.set(sx * 0.85, 0.8, 0); g.add(leg); }
+  const top = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.34, 0.5), stone); top.position.set(0, 1.55, 0); g.add(top);
+  const mantel = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.12, 0.62), stone); mantel.position.set(0, 1.74, 0); g.add(mantel);
+  const box = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.3, 0.42), new THREE.MeshBasicMaterial({ color: 0x080402 })); box.position.set(0, 0.7, 0.06); g.add(box);
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  return g;   // the level drops a flickering flame in the firebox
+}
+
+// a short grand staircase to a boarded-up landing (you can't go up — atmosphere)
+export function makeStaircase(steps = 6, w = 2.6, rise = 0.22, run = 0.34) {
+  const g = new THREE.Group(); const m = wood();
+  for (let i = 0; i < steps; i++) { const s = new THREE.Mesh(new THREE.BoxGeometry(w, rise, run + 0.06), m); s.position.set(0, rise / 2 + i * rise, -i * run); g.add(s); }
+  const top = steps * rise;
+  const landing = new THREE.Mesh(new THREE.BoxGeometry(w, 0.16, 1.3), m); landing.position.set(0, top + 0.08, -steps * run - 0.65); g.add(landing);
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.1, 0.15), new THREE.MeshStandardMaterial({ color: 0x130c06, roughness: 0.9 })); door.position.set(0, top + 1.05, -steps * run - 1.25); g.add(door);
+  for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.13, 0.05), m); b.position.set(0, top + 0.6 + i * 0.45, -steps * run - 1.16); b.rotation.z = (i % 2 ? 0.07 : -0.07); g.add(b); }
+  for (const sx of [-1, 1]) { const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, steps * run + 1.3), m); rail.position.set(sx * (w / 2 - 0.1), top * 0.55 + 0.45, -(steps * run) / 2); rail.rotation.x = Math.atan2(top, steps * run); g.add(rail); }
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  return g;
+}
+
+export function makeCandelabra() {
+  const g = new THREE.Group(); const m = ironMat();
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 1.35, 8), m); post.position.y = 0.7; g.add(post);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 0.1, 8), m); base.position.y = 0.05; g.add(base);
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.04, 0.04), m); arm.position.y = 1.28; g.add(arm);
+  const flames = [];
+  for (const x of [-0.21, 0, 0.21]) { const f = makeFlame(0xffaa44, 0.5, 4.5); f.position.set(x, 1.4, 0); g.add(f); flames.push(f); }
+  g.userData.flames = flames; g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  return g;
+}
+
+// a big gilded portrait for the grand walls
+export function makeGrandPainting(seed = 1, w = 1.1, h = 1.5) {
+  const g = new THREE.Group();
+  const canvas = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: portraitTexture(seed), roughness: 0.8 }));
+  g.add(canvas);
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.18, h + 0.18, 0.08), new THREE.MeshStandardMaterial({ color: 0x4a3a14, roughness: 0.45, metalness: 0.6 }));
+  frame.position.z = -0.04; g.add(frame);
+  g.traverse((o) => { if (o.isMesh) o.receiveShadow = true; });
+  return g;
+}

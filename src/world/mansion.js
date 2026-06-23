@@ -5,15 +5,18 @@ import { generateMaze, farthestCell, deadEnds } from './maze.js';
 import { wallpaperTexture, woodFloorTexture, softDot } from '../textures.js';
 import {
   makeKey, makeDoor, makeFlame, makePortrait, makeTable, makeChair,
-  makeBed, makeShelf, makeMirror,
+  makeBed, makeShelf, makeMirror, makeCouch, makeArmchair, makeRug,
+  makeFireplace, makeStaircase, makeCandelabra, makeGrandPainting,
 } from './props.js';
 
-// First floor of the house: a braided maze of low, wallpapered corridors and
-// furnished rooms. Looping passages + heavy fog make it impossible to map. The
-// brass key sits at the farthest dead-end; the basement stair waits behind a
-// locked door.
+// First floor of the house: it OPENS on a grand, once-comfortable parlor — a
+// seating group on a moth-eaten rug, a dead fireplace, a boarded grand
+// staircase — then narrows into a braided maze of wallpapered corridors. The
+// brass key sits at the farthest dead-end; a red-lit door leads down.
 
-const CELL = 4.2, H = 3.0, TH = 0.25;
+const CELL = 4.2, H = 3.3, TH = 0.25;
+const PARLOR = 3;                          // cells [0..2]x[0..2] are one open room
+const inParlor = (x, y) => x < PARLOR && y < PARLOR;
 
 function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
 const cw = (i) => i * CELL;  // cell index -> world coord
@@ -52,9 +55,13 @@ export function buildMansion(ctx) {
   const lintelXf = []; // arch frames over open passages
   for (let x = 0; x < cols; x++) for (let y = 0; y < rows; y++) {
     const c = cells[x][y];
-    if (!c.E) addWall(cw(x) + CELL / 2, cw(y), TH, CELL);
+    // east edge — skipped entirely when both cells are inside the open parlor
+    if (inParlor(x, y) && inParlor(x + 1, y)) { /* open hall */ }
+    else if (!c.E) addWall(cw(x) + CELL / 2, cw(y), TH, CELL);
     else if (x < cols - 1) lintelXf.push({ x: cw(x) + CELL / 2, z: cw(y), sx: TH + 0.12, sz: CELL });
-    if (!c.S) addWall(cw(x), cw(y) + CELL / 2, CELL, TH);
+    // south edge
+    if (inParlor(x, y) && inParlor(x, y + 1)) { /* open hall */ }
+    else if (!c.S) addWall(cw(x), cw(y) + CELL / 2, CELL, TH);
     else if (y < rows - 1) lintelXf.push({ x: cw(x), z: cw(y) + CELL / 2, sx: CELL, sz: TH + 0.12 });
     if (x === 0 && !c.W) addWall(cw(x) - CELL / 2, cw(y), TH, CELL);
     if (y === 0 && !c.N) addWall(cw(x), cw(y) - CELL / 2, CELL, TH);
@@ -97,7 +104,7 @@ export function buildMansion(ctx) {
   // --- key & door placement via maze distance ---
   const start = { x: 0, y: 0 };
   const far = farthestCell(maze, start.x, start.y);          // brass key here
-  const ends = deadEnds(maze).filter(([x, y]) => !(x === far.cell[0] && y === far.cell[1]) && !(x === 0 && y === 0));
+  const ends = deadEnds(maze).filter(([x, y]) => !(x === far.cell[0] && y === far.cell[1]) && !inParlor(x, y));
   // basement door at a different far-ish dead-end
   let doorCell = ends.length ? ends[(rand() * ends.length) | 0] : [cols - 1, rows - 1];
 
@@ -119,38 +126,49 @@ export function buildMansion(ctx) {
   // a candle by the key so you can find it
   const kc = makeFlame(0xffaa44, 1.0, 6); kc.position.set(keyPos.x + 0.5, 0.95, keyPos.z); group.add(kc); flames.push(kc);
 
-  // basement door + stairwell
+  // --- the basement door: a thing you cannot miss. Tall, ornate, set in a stone
+  //     archway, with cold red light bleeding from every gap and candelabra to
+  //     either side. The red glow reads as a beacon down the corridors. ---
   const dpx = cw(doorCell[0]), dpz = cw(doorCell[1]);
-  const stairHole = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 2.4),
-    new THREE.MeshStandardMaterial({ color: 0x000000 }));
+  const stairHole = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 2.4), new THREE.MeshStandardMaterial({ color: 0x000000 }));
   stairHole.position.set(dpx, 0.02, dpz); group.add(stairHole);
-  // a few descending steps into black
   for (let i = 0; i < 5; i++) {
-    const step = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.18, 0.4),
-      new THREE.MeshStandardMaterial({ color: 0x0a0908, roughness: 1 }));
+    const step = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.18, 0.4), new THREE.MeshStandardMaterial({ color: 0x0a0908, roughness: 1 }));
     step.position.set(dpx, -0.1 - i * 0.18, dpz - 0.6 - i * 0.4); group.add(step);
   }
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.6, 0.3),
-    new THREE.MeshStandardMaterial({ color: 0x0c0805, roughness: 0.9 }));
-  frame.position.set(dpx, 1.3, dpz - 1.0); group.add(frame);
-  const bDoor = makeDoor(1.8, 2.4); bDoor.position.set(dpx - 0.9, 0, dpz - 1.0); group.add(bDoor);
-  const bDoorBlocker = field.addDynamicBox(dpx - 1.0, dpz - 1.2, dpx + 1.0, dpz - 0.8, 2);
+  // ornate stone archway surround
+  const archMat = new THREE.MeshStandardMaterial({ color: 0x1a1512, roughness: 0.8, metalness: 0.2 });
+  for (const sx of [-1, 1]) { const col = new THREE.Mesh(new THREE.BoxGeometry(0.32, 3.0, 0.5), archMat); col.position.set(dpx + sx * 1.2, 1.5, dpz - 1.0); group.add(col); }
+  const arch = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.5, 0.5), archMat); arch.position.set(dpx, 3.0, dpz - 1.0); group.add(arch);
+  const keystone = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.4, 4), archMat); keystone.rotation.y = Math.PI / 4; keystone.position.set(dpx, 3.3, dpz - 1.0); group.add(keystone);
+  // the door itself, dark with a red-glowing seam
+  const bDoor = makeDoor(2.0, 2.7); bDoor.position.set(dpx - 1.0, 0, dpz - 1.0); group.add(bDoor);
+  const seam = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 2.7), new THREE.MeshBasicMaterial({ color: 0xff1408, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
+  seam.position.set(dpx, 1.35, dpz - 1.08); group.add(seam);
+  const doorGlow = new THREE.PointLight(0xff1206, 6, 8, 2); doorGlow.position.set(dpx, 1.2, dpz - 1.5); group.add(doorGlow);
+  const sill = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 0.6), new THREE.MeshBasicMaterial({ color: 0xff1810, transparent: true, opacity: 0.6 }));
+  sill.rotation.x = -Math.PI / 2; sill.position.set(dpx, 0.02, dpz - 0.6); group.add(sill);   // red light pooling at the threshold
+  // candelabra flanking the door
+  for (const sx of [-1, 1]) { const ca = makeCandelabra(); ca.position.set(dpx + sx * 1.55, 0, dpz - 0.3); group.add(ca); (ca.userData.flames || []).forEach((f) => flames.push(f)); field.addCircle(dpx + sx * 1.55, dpz - 0.3, 0.3); }
+  const bDoorBlocker = field.addDynamicBox(dpx - 1.1, dpz - 1.2, dpx + 1.1, dpz - 0.8, 2);
   ctx.interactables.push({
-    object: bDoor, pos: new THREE.Vector3(dpx, 1.3, dpz - 1.0), radius: 2.2, focusable: true,
+    object: bDoor, pos: new THREE.Vector3(dpx, 1.35, dpz - 1.0), radius: 2.4, focusable: true,
     canUse: (state) => state.inventory.has('brasskey'),
     lockedHint: true,
     onUse: (state, c) => {
       bDoor.userData.targetAngle = -Math.PI * 0.62; bDoorBlocker.active = false;
-      c.audio.doorCreak(bDoor.position);
+      seam.visible = false; c.audio.doorCreak(bDoor.position);
       setTimeout(() => c.go('basement'), 1400);
     },
   });
+  // a cold draft + far heartbeat as you near the door
+  ctx.triggers.push({ x: dpx, z: dpz + CELL * 0.7, r: 2.2, once: true, onEnter: (c) => { c.audio.whisper(new THREE.Vector3(dpx, 1, dpz - 1)); c.audio.bumpHeart(0.4, 88); } });
 
   // --- furnish rooms & hang portraits on closed walls ---
   const portraits = [];
   let candleBudget = 7;
   for (let x = 0; x < cols; x++) for (let y = 0; y < rows; y++) {
-    if (x === 0 && y === 0) continue;
+    if (inParlor(x, y)) continue;                 // the parlor is furnished by hand below
     if (x === far.cell[0] && y === far.cell[1]) continue;
     const c = cells[x][y];
     const wx = cw(x), wz = cw(y);
@@ -184,6 +202,27 @@ export function buildMansion(ctx) {
     }
   }
 
+  // --- the grand parlor: a once-comfortable room you open onto ---
+  const PX = cw(1), PZ = cw(1);                 // parlor centre (cells 0..2)
+  const wWall = cw(0) - CELL / 2, nWall = cw(0) - CELL / 2;   // west & north house walls
+  const rug = makeRug(4.2, 3.0); rug.position.set(PX, 0, PZ + 0.3); group.add(rug);
+  const coffee = makeTable(1.1, 0.55, 0.42); coffee.position.set(PX, 0, PZ + 0.3); group.add(coffee); field.addCircle(PX, PZ + 0.3, 0.6);
+  const couch = makeCouch(2.1); couch.position.set(PX, 0, PZ + 2.0); couch.rotation.y = Math.PI; group.add(couch); field.addBox(PX - 1.1, PZ + 1.6, PX + 1.1, PZ + 2.4, 2);
+  const acL = makeArmchair(); acL.position.set(PX - 2.1, 0, PZ + 0.3); acL.rotation.y = Math.PI / 2; group.add(acL); field.addCircle(PX - 2.1, PZ + 0.3, 0.5);
+  const acR = makeArmchair(); acR.position.set(PX + 2.1, 0, PZ + 0.3); acR.rotation.y = -Math.PI / 2; group.add(acR); field.addCircle(PX + 2.1, PZ + 0.3, 0.5);
+  // dead fireplace on the west wall, with the last embers
+  const fp = makeFireplace(); fp.position.set(wWall + 0.35, 0, PZ); fp.rotation.y = Math.PI / 2; group.add(fp);
+  const fpFlame = makeFlame(0xff5a22, 0.6, 6); fpFlame.position.set(wWall + 0.55, 0.5, PZ); group.add(fpFlame); flames.push(fpFlame);
+  field.addBox(wWall, PZ - 1.2, wWall + 0.7, PZ + 1.2, 2);
+  // the grand staircase against the north wall — boarded at the top
+  const stair = makeStaircase(7, 2.8); stair.position.set(PX, 0, nWall + 3.7); group.add(stair);
+  field.addBox(PX - 1.5, nWall, PX + 1.5, nWall + 3.9, 2);
+  // bookshelves flanking the staircase
+  for (const sx of [-1, 1]) { const bs = makeShelf(2.4); bs.position.set(PX + sx * 3.2, 0, nWall + 0.35); group.add(bs); field.addBox(PX + sx * 3.2 - 0.6, nWall, PX + sx * 3.2 + 0.6, nWall + 0.5, 2); }
+  // big gilded portraits watching the room (west wall + north wall)
+  for (const gz of [PZ - 2.6, PZ + 2.6]) { const gp = makeGrandPainting(((gz | 0) % 8) + 1, 1.0, 1.45); gp.position.set(wWall + 0.1, 1.8, gz); gp.rotation.y = Math.PI / 2; group.add(gp); }
+  const gpN = makeGrandPainting(6, 1.2, 1.6); gpN.position.set(PX + 4.8, 1.9, nWall + 0.1); group.add(gpN);
+
   // --- chandeliers + blood, for that old-blood-and-dust grandeur ---
   const bloodTex = softDot('#1f0202');
   function blood(x, z, s = 1) {
@@ -197,8 +236,8 @@ export function buildMansion(ctx) {
     new THREE.MeshStandardMaterial({ map: bloodTex, transparent: true, opacity: 0.7, depthWrite: false }));
   smear.position.set(keyPos.x - CELL / 2 + 0.12, 1.1, keyPos.z); smear.rotation.y = Math.PI / 2; group.add(smear);
 
-  // two chandeliers over the larger junctions
-  for (const cellxy of [[2, 2], [4, 5]]) {
+  // a chandelier over the parlor, another deep in the maze
+  for (const cellxy of [[1, 1], [5, 4]]) {
     const cx = cw(cellxy[0]), cz = cw(cellxy[1]);
     const ch = new THREE.Group();
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.025, 6, 16),
@@ -240,19 +279,15 @@ export function buildMansion(ctx) {
 
   function update(dt, t, player) {
     if (brass.parent) { brass.rotation.y += dt * 1.0; brass.position.y = 0.95 + Math.sin(t * 2) * 0.03; }
-    // door easing
+    // basement door easing + its red beacon pulsing
     const ud = bDoor.userData; ud.angle += (ud.targetAngle - ud.angle) * Math.min(1, dt * 2.2); bDoor.rotation.y = ud.angle;
-    // portrait eyes catch a flicker as the torch sweeps past (subtle)
-    for (const p of portraits) { const m = p.children[0].material; if (m) m.emissiveIntensity = 0; }
+    doorGlow.intensity = 5 + Math.sin(t * 4) * 1.6 + Math.random() * 0.6;
+    if (seam.visible) seam.material.opacity = 0.4 + Math.sin(t * 3) * 0.15;
   }
-
-  // face an open passage out of the entrance cell, never a wall
-  const c00 = cells[0][0];
-  const spawnYaw = c00.E ? -Math.PI / 2 : (c00.S ? Math.PI : (c00.N ? 0 : Math.PI / 2));
 
   return {
     name: 'mansion', group, field, flames,
-    spawn: { x: cw(0), z: cw(0), yaw: spawnYaw },
+    spawn: { x: cw(1), z: cw(1) + CELL, yaw: 0 },     // stand in the parlor, facing the grand staircase
     fog: { color: zc.fog, density: zc.fogDensity },
     ambient: { color: zc.ambient, intensity: zc.ambientI },
     sky: zc.sky, update,
