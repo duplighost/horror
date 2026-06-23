@@ -1,0 +1,5 @@
+node_modules/
+scratch_shots/
+*.log
+.DS_Store
+.netlify/

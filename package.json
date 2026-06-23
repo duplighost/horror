@@ -1,0 +1,12 @@
+{
+  "name": "marrow",
+  "version": "1.0.0",
+  "description": "MARROW — a first-person browser horror game. Three.js, procedural everything, no build step.",
+  "type": "module",
+  "scripts": {
+    "start": "node serve.mjs",
+    "serve": "node serve.mjs"
+  },
+  "keywords": ["horror", "game", "three.js", "webgl", "first-person", "mobile"],
+  "license": "MIT"
+}

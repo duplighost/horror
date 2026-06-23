@@ -1,0 +1,54 @@
+// Thin wrapper over the DOM overlay layers. The game shows almost no words —
+// just black fades, white stinger flashes, a red dread pulse, and a reticle dot
+// that swells when something can be touched.
+
+const $ = (id) => document.getElementById(id);
+
+export const UI = {
+  fade: $('fade'), flash: $('flash'), dread: $('dread'), reticle: $('reticle'),
+  boot: $('boot'), loading: $('loading'), endcard: $('endcard'), mobhint: $('mobhint'),
+
+  fadeTo(opacity, ms = 1200) {
+    this.fade.style.transition = `opacity ${ms}ms ease`;
+    requestAnimationFrame(() => { this.fade.style.opacity = String(opacity); });
+  },
+
+  blink(downMs = 90, upMs = 220) {
+    // a hard eye-blink: snap to black then open
+    this.fade.style.transition = `opacity ${downMs}ms ease`;
+    this.fade.style.opacity = '1';
+    return new Promise((res) => setTimeout(() => {
+      this.fade.style.transition = `opacity ${upMs}ms ease`;
+      this.fade.style.opacity = '0';
+      setTimeout(res, upMs);
+    }, downMs));
+  },
+
+  flashWhite(intensity = 0.85, ms = 240) {
+    const f = this.flash;
+    f.style.transition = 'none'; f.style.opacity = String(intensity);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      f.style.transition = `opacity ${ms}ms ease`; f.style.opacity = '0';
+    }));
+  },
+
+  setDread(opacity, ms = 600) {
+    this.dread.style.transition = `opacity ${ms}ms ease`;
+    this.dread.style.opacity = String(opacity);
+  },
+
+  setReticle(active) { this.reticle.classList.toggle('active', active); },
+
+  showLoading(on) { this.loading.classList.toggle('show', on); },
+  hideBoot() { this.boot.classList.add('hidden'); },
+
+  showEnd(title, sub = '↺') {
+    this.endcard.querySelector('.et').textContent = title;
+    this.endcard.querySelector('.es').textContent = sub;
+    this.endcard.classList.add('show');
+  },
+  hideEnd() { this.endcard.classList.remove('show'); },
+
+  showMobHint(svg) { this.mobhint.innerHTML = svg; this.mobhint.classList.add('show'); },
+  hideMobHint() { this.mobhint.classList.remove('show'); },
+};

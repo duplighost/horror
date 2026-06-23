@@ -1,0 +1,15 @@
+# MARROW is a static site (ES modules + a vendored Three.js). No build step.
+[build]
+  publish = "."
+  command = ""
+
+# Long-cache the vendored engine; never cache the HTML entry.
+[[headers]]
+  for = "/vendor/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
