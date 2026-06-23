@@ -23,6 +23,8 @@ export function buildBasement(ctx) {
   const cols = 6, rows = 8;
   const maze = generateMaze(cols, rows, 99, 0.55);   // very loopy
   const cells = maze.cells;
+  const CELLAR = 2;                                   // cells [0..1]x[0..1] are an open cellar landing
+  const inCellar = (x, y) => x < CELLAR && y < CELLAR;
   const dist = bfs(maze, 0, 0);
   const far = farthestCell(maze, 0, 0);
 
@@ -51,8 +53,10 @@ export function buildBasement(ctx) {
   for (let x = 0; x < cols; x++) for (let y = 0; y < rows; y++) {
     const c = cells[x][y];
     const deep = (dist[x][y] / maxDist) > 0.55;   // flesh takes over deeper in
-    if (!c.E) addWall(cw(x) + CELL / 2, cw(y), TH, CELL, deep);
-    if (!c.S) addWall(cw(x), cw(y) + CELL / 2, CELL, TH, deep);
+    if (inCellar(x, y) && inCellar(x + 1, y)) { /* open cellar */ }
+    else if (!c.E) addWall(cw(x) + CELL / 2, cw(y), TH, CELL, deep);
+    if (inCellar(x, y) && inCellar(x, y + 1)) { /* open cellar */ }
+    else if (!c.S) addWall(cw(x), cw(y) + CELL / 2, CELL, TH, deep);
     if (x === 0 && !c.W) addWall(cw(x) - CELL / 2, cw(y), TH, CELL, deep);
     if (y === 0 && !c.N) addWall(cw(x), cw(y) - CELL / 2, CELL, TH, deep);
   }
@@ -80,6 +84,37 @@ export function buildBasement(ctx) {
     const f = makeFlame(0xff6622, 0.7, 4); f.position.set(cw(0) + (rand() - 0.5), 0.6, cw(i) + 0.5);
     group.add(f); flames.push(f);
   }
+
+  // --- the cellar landing: the stone steps you came down, barrels, hanging
+  //     chains and a wall torch, before the maze swallows you. ---
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x241810, roughness: 0.95 });
+  const ironMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1e, roughness: 0.5, metalness: 0.7 });
+  const stoneStep = new THREE.MeshStandardMaterial({ map: stoneTexture(), color: 0x9a948f, roughness: 0.6, metalness: 0.1 });
+  // a flight of steps RISING toward a dark doorway in the north wall — the way
+  // you came down (you can't go back up)
+  const sX = cw(0) - 0.3;
+  for (let i = 0; i < 6; i++) { const st = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.16, 0.42), stoneStep); st.position.set(sX, 0.1 + i * 0.16, 0.7 - i * 0.36); st.castShadow = true; st.receiveShadow = true; group.add(st); }
+  field.addBox(sX - 0.9, cw(0) - CELL / 2, sX + 0.9, 0.85, 2);
+  const doorway = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.1), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+  doorway.position.set(sX, 1.55, cw(0) - CELL / 2 + 0.02); group.add(doorway);
+  // a wall torch over the stair for light
+  const torch = makeFlame(0xff7a30, 0.9, 6.5); torch.position.set(sX + 1.4, 1.5, cw(0) - CELL / 2 + 0.2); group.add(torch); flames.push(torch);
+  // barrels & a crate
+  for (const b of [[cw(1) + 0.3, cw(0) + 0.2], [cw(1) + 0.5, cw(0) + 0.9], [cw(0) + 0.2, cw(1) + 0.6]]) {
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.36, 0.9, 12), woodMat);
+    barrel.position.set(b[0], 0.45, b[1]); barrel.castShadow = true; group.add(barrel); field.addCircle(b[0], b[1], 0.38);
+    for (const ry of [0.18, 0.72]) { const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.345, 0.018, 6, 16), ironMat); hoop.rotation.x = Math.PI / 2; hoop.position.set(b[0], ry, b[1]); group.add(hoop); }
+  }
+  const crate = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), woodMat); crate.position.set(cw(1) + 0.2, 0.35, cw(1) + 0.3); crate.rotation.y = 0.4; crate.castShadow = true; group.add(crate); field.addCircle(cw(1) + 0.2, cw(1) + 0.3, 0.5);
+  // chains hanging from the ceiling
+  const chains = [];
+  for (let i = 0; i < 4; i++) {
+    const len = 0.8 + rand() * 0.9, cx = cw(0) + rand() * CELL, cz = cw(0) + rand() * CELL;
+    const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, len, 5), ironMat);
+    chain.position.set(cx, H - len / 2, cz); group.add(chain);
+    if (i < 2) { const hook = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.012, 6, 10, Math.PI), ironMat); hook.position.set(cx, H - len, cz); group.add(hook); chains.push({ m: chain, x: cx, z: cz, baseY: H - len / 2, seed: rand() * 10 }); }
+  }
+  ctx.cellarChains = chains;
 
   // --- the pull: a red glowing doorway at the farthest cell. Two crossed,
   //     double-sided planes so it reads as a doorway from any approach. ---
@@ -126,12 +161,9 @@ export function buildBasement(ctx) {
     if (Math.random() < dt * 1.5) ctx.audio.drip(new THREE.Vector3(player.pos.x + (Math.random() - 0.5) * 6, 1.5, player.pos.z + (Math.random() - 0.5) * 6));
   }
 
-  const b00 = cells[0][0];
-  const bSpawnYaw = b00.E ? -Math.PI / 2 : (b00.S ? Math.PI : (b00.N ? 0 : Math.PI / 2));
-
   return {
     name: 'basement', group, field, flames, exit: { x: ex, z: ez },
-    spawn: { x: cw(0), z: cw(0), yaw: bSpawnYaw },
+    spawn: { x: cw(0) + CELL / 2, z: cw(0) + CELL / 2, yaw: Math.PI },   // in the cellar, back to the stairs, facing the maze
     fog: { color: zc.fog, density: zc.fogDensity },
     ambient: { color: zc.ambient, intensity: zc.ambientI },
     sky: zc.sky, update,

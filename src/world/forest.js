@@ -181,6 +181,35 @@ export function buildForest(ctx) {
     } });
   }
 
+  // --- the opening: your abandoned campsite. A dead fire, a fallen lantern (the
+  //     light you wake to), a torn tent, a bedroll. You were here. Now you're not. ---
+  const charMat = new THREE.MeshStandardMaterial({ color: 0x141210, roughness: 1 });
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x2c2c30, roughness: 0.95 });
+  const canvasMat = new THREE.MeshStandardMaterial({ color: 0x33302a, roughness: 1, side: THREE.DoubleSide });
+  // fire ring (in front of spawn)
+  const fcx = 0, fcz = 5;
+  for (let i = 0; i < 7; i++) { const a = (i / 7) * Math.PI * 2; const st = new THREE.Mesh(new THREE.IcosahedronGeometry(0.12 + rand() * 0.06, 0), stoneMat); st.position.set(fcx + Math.cos(a) * 0.5, 0.08, fcz + Math.sin(a) * 0.5); group.add(st); }
+  for (let i = 0; i < 3; i++) { const log = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.7, 6), charMat); log.position.set(fcx, 0.06, fcz); log.rotation.set(Math.PI / 2, 0, i * 1.0); group.add(log); }
+  const ember = makeFlame(0xff3a10, 0.18, 2.2); ember.position.set(fcx, 0.12, fcz); ember.scale.setScalar(0.6); group.add(ember); flames.push(ember);
+  field.addCircle(fcx, fcz, 0.55);
+  // the fallen lantern — your only light when you wake
+  const campLantern = makeFlame(0xffb24a, 0.7, 6); campLantern.position.set(fcx + 1.0, 0.18, fcz + 0.4); group.add(campLantern); flames.push(campLantern);
+  const campLanternBody = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.18, 8), new THREE.MeshStandardMaterial({ color: 0x14140f, roughness: 0.5, metalness: 0.6 }));
+  campLanternBody.position.set(fcx + 1.0, 0.09, fcz + 0.4); campLanternBody.rotation.z = 1.3; group.add(campLanternBody);
+  // a log to sit on
+  const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.2, 1.6, 7), new THREE.MeshStandardMaterial({ map: barkTexture(), roughness: 0.95 }));
+  seat.rotation.set(0, 0, Math.PI / 2); seat.position.set(-1.3, 0.2, fcz + 0.6); group.add(seat); field.addCircle(-1.3, fcz + 0.6, 0.5);
+  // a torn tent, slumped
+  const tent = new THREE.Group();
+  for (const sx of [-1, 1]) { const side = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.5, 2.0), canvasMat); side.position.set(sx * 0.5, 0.62, 0); side.rotation.z = sx * 0.62; tent.add(side); }
+  const tback = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.2), canvasMat); tback.position.set(0, 0.55, -1.0); tent.add(tback);
+  tent.position.set(-3.0, 0, 7.2); tent.rotation.set(-0.1, 0.5, 0.16); group.add(tent);
+  tent.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  field.addCircle(-3.0, 7.2, 0.9);
+  // a bedroll by the fire
+  const bedroll = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.12, 1.9), new THREE.MeshStandardMaterial({ color: 0x2a2620, roughness: 1 }));
+  bedroll.position.set(1.4, 0.07, 7.6); bedroll.rotation.y = 0.3; group.add(bedroll);
+
   // --- a rusted iron fence running along the left of the approach ---
   const ironMat = new THREE.MeshStandardMaterial({ color: 0x16181c, roughness: 0.6, metalness: 0.7 });
   const barGeo = new THREE.CylinderGeometry(0.03, 0.03, 1.5, 5);
