@@ -108,8 +108,13 @@ A few of the tricks used to make it big, confusing, and frightening:
   your periphery and vanishes the instant you look at it; the flashlight chooses
   the worst moments to die.
 - **The soundtrack tracks your dread.** A single "tension" value swells the
-  dissonant drone, raises your heartbeat, and decides how likely the dark is to
-  do something — and it peaks, with a layered stinger, exactly when you flinch.
+  dissonant drone and quickens a heartbeat that rises *and* falls with the fear.
+- **The Director paces the fear.** Most beats are quiet — a whisper or footsteps
+  behind you, a far-off muffled scream, a moan, the torch stuttering, the
+  Presence at the edge of your eye. Every so often the room holds its breath and
+  *builds* — but that build only pays off with a real scream rarely (there's a
+  hard cooldown); otherwise it collapses into silence. You're always braced,
+  seldom actually hit, and never sure which it'll be.
 - **The approach is meant to be hard.** At the end, the closer you get to the
   thing on the altar, the heavier your legs, the tighter your vision, and the
   louder everything screams. You have to push through it.

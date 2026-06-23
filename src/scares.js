@@ -16,13 +16,17 @@ export class Director {
     this.field = null;
     this.player = ctx.player;
 
-    this.flick = 1; this.flickering = false; this.flickT = 0;
-    this.nextFlicker = 6 + Math.random() * 6;
-    this.ambientTimer = 4 + Math.random() * 4;
+    this.flickering = false; this.flickT = 0;
+    this.dreadTimer = 4 + Math.random() * 4;
+    this.lastLoud = -999;          // seconds; loud scares are gated by LOUD_GAP
+    this.LOUD_GAP = 26;            // minimum seconds between full jump-scares
     this.chaseActive = false;
     this.ended = false;
     this.objective = 'forest';
   }
+
+  _nowS() { return performance.now() / 1000; }
+  _canLoud() { return this._nowS() - this.lastLoud > this.LOUD_GAP && Audio.tension > 0.4; }
 
   setField(f) { this.field = f; }
 
@@ -33,9 +37,9 @@ export class Director {
     this.chaseActive = false;
     this.ended = false;
     this.objective = 'forest';
-    this.flickering = false; this.flick = 1; this.flickT = 0;
-    this.nextFlicker = 6 + Math.random() * 6;
-    this.ambientTimer = 4 + Math.random() * 4;
+    this.flickering = false; this.flickT = 0;
+    this.dreadTimer = 4 + Math.random() * 4;
+    this.lastLoud = -999;
     this.player.flicker = 1; this.player.flashOn = true;
     this.player.frozen = false; this.player.speedScale = 1; this.player.releaseLook();
   }
@@ -79,6 +83,7 @@ export class Director {
   // One call lands a full jump-scare: audio stinger, white flash, post pulse,
   // camera shake, a heartbeat punch, and a haptic buzz on mobile.
   stinger(type, pos) {
+    this.lastLoud = this._nowS();      // any full stinger resets the loud cooldown
     const hard = type === 'shriekHard';
     Audio.stinger(type);
     this.ctx.ui.flashWhite(hard ? 0.95 : (type === 'breath' ? 0.35 : 0.7), 220);
@@ -169,41 +174,112 @@ export class Director {
 
     if (this.ended) { this.player.flicker = 1; return; }
 
-    // --- flashlight nerve ---
+    this._updateTorch(dt);
+    this._updateDread(dt);
+
+    // light aberration creep with tension
+    this.ctx.post.set('aberration', 0.0015 + Audio.tension * 0.002);
+  }
+
+  // ---- the failing torch (mostly cosmetic; an occasional longer stutter) ----
+  _updateTorch(dt) {
     if (this.flickering) {
       this.flickT -= dt;
       this.player.flicker = Math.random() < 0.5 ? (0.08 + Math.random() * 0.5) : 1;
       if (this.flickT <= 0) { this.flickering = false; this.player.flicker = 1; }
     } else {
-      this.player.flicker = 1 - Math.random() * 0.025;
-      this.nextFlicker -= dt;
-      if (this.nextFlicker <= 0) {
-        this.flickering = true;
-        this.flickT = 0.15 + Math.random() * 0.35;
-        this.nextFlicker = (8 + Math.random() * 10) - Audio.tension * 5;
-        // sometimes a flicker hides a full blackout reveal
-        if (Math.random() < 0.18 + Audio.tension * 0.3) this._blackoutReveal();
-      }
+      this.player.flicker = 1 - Math.random() * 0.025;   // a constant faint unsteadiness
     }
+  }
+  _torchStutter() { this.flickering = true; this.flickT = 0.2 + Math.random() * 0.4; }
 
-    // --- systemic ambient dread, scaled by tension ---
-    this.ambientTimer -= dt;
-    if (this.ambientTimer <= 0) {
-      this.ambientTimer = (5 + Math.random() * 6) - Audio.tension * 3;
-      const t = Audio.tension, r = Math.random();
-      const p = this.player.pos, behind = this.player.yaw + Math.PI;
-      const bpos = new THREE.Vector3(p.x + Math.sin(behind) * 3, 1.4, p.z + Math.cos(behind) * 3);
-      if (r < 0.3) Audio.whisper(bpos);
-      else if (r < 0.5) Audio.creak(new THREE.Vector3(p.x + (Math.random() - 0.5) * 10, 2, p.z + (Math.random() - 0.5) * 10));
-      else if (r < 0.65 && t > 0.3) Audio.footstep(bpos, this.objective !== 'forest');
-      else if (r < 0.8 && t > 0.45 && !this.entity.isVisible) this.peripheral();
-      else if (r < 0.9) Audio.drip(new THREE.Vector3(p.x + (Math.random() - 0.5) * 8, 2, p.z + (Math.random() - 0.5) * 8));
-      // tension naturally simmers down between scares
-      Audio.setTension(Math.max(this.objective === 'forest' ? 0.15 : 0.4, Audio.tension - 0.05));
+  // ---- the dread scheduler -------------------------------------------------
+  // Most beats are quiet. Now and then the room "builds" — and that build pays
+  // off with a real scare only if the loud cooldown allows; otherwise it
+  // collapses into silence. So you're always braced, rarely actually hit.
+  _updateDread(dt) {
+    this.dreadTimer -= dt;
+    if (this.dreadTimer > 0) return;
+    const t = Audio.tension;
+    this.dreadTimer = (5.5 + Math.random() * 7) - t * 3;          // tenser => a touch more often
+
+    const sinceLoud = this._nowS() - this.lastLoud;
+    if (Math.random() < 0.7 || sinceLoud < this.LOUD_GAP * 0.5) this._softBeat(t);
+    else this._buildBeat(t);
+
+    // tension simmers down between beats so it has room to rise again
+    Audio.setTension(Math.max(this.objective === 'forest' ? 0.12 : 0.34, Audio.tension - 0.06));
+  }
+
+  _behind(dist = 3) {
+    const a = this.player.yaw + Math.PI;
+    return new THREE.Vector3(this.player.pos.x + Math.sin(a) * dist, 1.4, this.player.pos.z + Math.cos(a) * dist);
+  }
+  _near(radius = 9, y = 2) {
+    const p = this.player.pos;
+    return new THREE.Vector3(p.x + (Math.random() - 0.5) * radius, y, p.z + (Math.random() - 0.5) * radius);
+  }
+
+  // a quiet dread cue, weighted by tension — never flashes the screen
+  _softBeat(t) {
+    const wet = this.objective !== 'forest';
+    const opts = [
+      [3, () => Audio.whisper(this._behind())],
+      [2, () => Audio.creak(this._near(10))],
+      [wet ? 3 : 1, () => Audio.drip(this._near(8))],
+      [1 + t * 2, () => Audio.moan(this._near(14, 1.5))],
+      [t * 2.2, () => Audio.distantScream(this._near(20, 2))],
+      [t * 3, () => { if (t > 0.3) this._approachFootsteps(); }],
+      [t * 3, () => { if (t > 0.35 && !this.entity.isVisible) this.peripheral(); }],
+      [1 + t * 1.5, () => { if (t > 0.3) this._torchStutter(); }],
+    ];
+    const total = opts.reduce((s, o) => s + o[0], 0);
+    let r = Math.random() * total;
+    for (const [w, fn] of opts) { if ((r -= w) <= 0) { fn(); return; } }
+  }
+
+  // the room holds its breath and tightens — then either lands a scare or doesn't
+  _buildBeat(t) {
+    Audio.setTension(Math.min(1, t + 0.3));
+    Audio.bumpHeart(0.5, 95);
+    Audio.hush(1.3);
+    if (!this.entity.isVisible && Math.random() < 0.5) this.peripheral();   // a glimpse during the swell
+    setTimeout(() => {
+      if (this.ended) return;
+      if (this._canLoud() && Math.random() < 0.6) this._loudScare();
+      else { Audio.bumpHeart(0.3, 80); if (Math.random() < 0.5) Audio.whisper(this._behind(1.5)); }  // fake-out
+    }, 1300);
+  }
+
+  // a real jump-scare, varied: breath (intimate) is most common, the full
+  // shriek is rare, shriekHard only when you're already terrified.
+  _loudScare() {
+    if (Math.random() < 0.3) { this._blackoutReveal(); return; }   // torch-death reveal
+    const t = Audio.tension, r = Math.random();
+    let type = 'breath';
+    if (t > 0.8 && r < 0.25) type = 'shriekHard';
+    else if (r < 0.5) type = 'breath';
+    else if (r < 0.78) type = 'shriek';
+    else type = 'growl';
+    // half the time the Presence is right there for the hit, then gone
+    if (Math.random() < 0.5) {
+      const p = this.player.pos, a = this.player.yaw + (Math.random() - 0.5) * 0.9;
+      this.entity.spawnAt(p.x + Math.sin(a) * 2.4, p.z + Math.cos(a) * 2.4, p.x, p.z, 'idle', { dwell: 0.12 });
     }
+    this.stinger(type);
+  }
 
-    // light aberration creep with tension
-    this.ctx.post.set('aberration', 0.0015 + Audio.tension * 0.002);
+  // footsteps closing in from behind, getting nearer — then nothing
+  _approachFootsteps() {
+    let d = 6;
+    const step = () => {
+      if (this.ended || d < 1.2) { if (d < 1.2) Audio.bumpHeart(0.4, 92); return; }
+      const a = this.player.yaw + Math.PI;
+      Audio.footstep(new THREE.Vector3(this.player.pos.x + Math.sin(a) * d, 1, this.player.pos.z + Math.cos(a) * d), this.objective !== 'forest');
+      d -= 1.0;
+      setTimeout(step, 360);
+    };
+    step();
   }
 
   _blackoutReveal() {
@@ -215,8 +291,7 @@ export class Director {
     setTimeout(() => {
       this.entity.spawnAt(p.pos.x + Math.sin(a) * 3, p.pos.z + Math.cos(a) * 3, p.pos.x, p.pos.z, 'idle', { dwell: 0.1 });
       p.flashOn = true;
-      // vary the punchline so it isn't always the same shriek
-      this.stinger(Math.random() < 0.45 ? 'breath' : 'shriek');
+      this.stinger(Math.random() < 0.5 ? 'breath' : 'shriek');
     }, 500 + Math.random() * 500);
   }
 }

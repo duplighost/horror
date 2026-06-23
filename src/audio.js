@@ -252,6 +252,42 @@ export const Audio = (() => {
     s.start(t); s.stop(t + 1.1);
   }
 
+  // a long, low, breathy moan from somewhere in the dark
+  function moan(pos) {
+    if (!ctx) return;
+    const t = now(); const p = panFor(pos);
+    const s = noiseSource(false);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 4;
+    bp.frequency.setValueAtTime(300, t); bp.frequency.linearRampToValueAtTime(520, t + 1.0); bp.frequency.linearRampToValueAtTime(260, t + 2.0);
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t); ng.gain.linearRampToValueAtTime(0.05, t + 0.5); ng.gain.linearRampToValueAtTime(0.0001, t + 2.0);
+    s.connect(bp); bp.connect(ng); ng.connect(p.in);
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(90, t); o.frequency.linearRampToValueAtTime(110, t + 1.0); o.frequency.linearRampToValueAtTime(80, t + 2.0);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t); og.gain.linearRampToValueAtTime(0.04, t + 0.6); og.gain.linearRampToValueAtTime(0.0001, t + 2.0);
+    o.connect(lp); lp.connect(og); og.connect(p.in);
+    p.out.connect(master); p.out.connect(conv);
+    s.start(t); s.stop(t + 2.1); o.start(t); o.stop(t + 2.1);
+  }
+
+  // a muffled scream, far off and drenched in reverb (someone else, somewhere)
+  function distantScream(pos) {
+    if (!ctx) return;
+    const t = now(); const p = panFor(pos);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 850;
+    const g = ctx.createGain(); g.gain.value = 1;
+    [1, 1.5].forEach((m, i) => {
+      const o = ctx.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(600 * m, t); o.frequency.linearRampToValueAtTime(900 * m, t + 0.25); o.frequency.linearRampToValueAtTime(520 * m, t + 0.9);
+      const og = ctx.createGain();
+      og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.03 / (1 + i), t + 0.1); og.gain.exponentialRampToValueAtTime(0.0001, t + 1.0);
+      o.connect(og); og.connect(lp); o.start(t); o.stop(t + 1.1);
+    });
+    lp.connect(g); g.connect(p.in); p.out.connect(master); p.out.connect(conv);
+  }
+
   function footstep(pos, wet = false) {
     if (!ctx) return;
     const t = now(); const p = panFor(pos);
@@ -301,29 +337,49 @@ export const Audio = (() => {
   function doorCreak(pos) { creak(pos, true); }
 
   // ---- the scream: layered jump-scare stinger ------------------------------
+  // 'breath' is deliberately quiet & intimate (no chest punch). 'shriek',
+  // 'shriekHard', and 'growl' get the sub drop + noise impact.
   function stinger(type = 'shriek') {
     if (!ctx) return;
     const t = now();
+    const loud = type !== 'breath';
     duck(0.25, 0.05);            // momentarily pull the bed so the hit cuts
     setTimeout(() => duck(1.0, 1.5), 120);
 
-    // sub drop — punches the chest
-    const sub = ctx.createOscillator(); sub.type = 'sine';
-    const sg = ctx.createGain();
-    sub.frequency.setValueAtTime(150, t); sub.frequency.exponentialRampToValueAtTime(28, t + 0.6);
-    sg.gain.setValueAtTime(0.0001, t); sg.gain.exponentialRampToValueAtTime(0.8, t + 0.01);
-    sg.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
-    sub.connect(sg); sg.connect(master); sg.connect(conv);
-    sub.start(t); sub.stop(t + 1.2);
+    if (loud) {
+      // sub drop — punches the chest
+      const sub = ctx.createOscillator(); sub.type = 'sine';
+      const sg = ctx.createGain();
+      sub.frequency.setValueAtTime(150, t); sub.frequency.exponentialRampToValueAtTime(28, t + 0.6);
+      sg.gain.setValueAtTime(0.0001, t); sg.gain.exponentialRampToValueAtTime(0.8, t + 0.01);
+      sg.gain.exponentialRampToValueAtTime(0.0001, t + 1.1);
+      sub.connect(sg); sg.connect(master); sg.connect(conv);
+      sub.start(t); sub.stop(t + 1.2);
 
-    // noise burst impact
-    const n = noiseSource(false); const ng = ctx.createGain();
-    const nf = ctx.createBiquadFilter(); nf.type = 'highpass'; nf.frequency.value = 400;
-    ng.gain.setValueAtTime(0.7, t); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
-    n.connect(nf); nf.connect(ng); ng.connect(master); ng.connect(conv);
-    n.start(t); n.stop(t + 0.6);
+      // noise burst impact
+      const n = noiseSource(false); const ng = ctx.createGain();
+      const nf = ctx.createBiquadFilter(); nf.type = 'highpass'; nf.frequency.value = 400;
+      ng.gain.setValueAtTime(0.7, t); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+      n.connect(nf); nf.connect(ng); ng.connect(master); ng.connect(conv);
+      n.start(t); n.stop(t + 0.6);
+    }
 
-    if (type === 'shriek' || type === 'shriekHard') {
+    if (type === 'growl') {
+      // a low, building, guttural roar — the opposite end from the shriek
+      [1, 1.5, 2.02].forEach((m, i) => {
+        const o = ctx.createOscillator(); o.type = 'sawtooth';
+        o.frequency.setValueAtTime(60 * m, t); o.frequency.linearRampToValueAtTime(95 * m, t + 0.7);
+        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 4;
+        lp.frequency.setValueAtTime(200, t); lp.frequency.linearRampToValueAtTime(900, t + 0.6);
+        const g = ctx.createGain(); const peak = 0.13 / (1 + i * 0.5);
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + 0.15);
+        g.gain.setValueAtTime(peak, t + 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.3);
+        const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 18 + i * 6;
+        const la = ctx.createGain(); la.gain.value = 0.04; lfo.connect(la); la.connect(g.gain);
+        o.connect(lp); lp.connect(g); g.connect(master); g.connect(conv);
+        o.start(t); o.stop(t + 1.35); lfo.start(t); lfo.stop(t + 1.35);
+      });
+    } else if (type === 'shriek' || type === 'shriekHard') {
       // violent detuned string cluster glissando — the classic violin shriek
       const partials = type === 'shriekHard' ? [1, 1.0595, 1.414, 2, 2.0595, 2.83] : [1, 1.0595, 1.5, 2];
       const baseF = 1100;
@@ -406,6 +462,19 @@ export const Audio = (() => {
     muffle.frequency.setTargetAtTime(freq, now(), time / 3);
   }
 
+  // a held breath: pull the ambient bed + wind to near-silence for a beat (your
+  // own heartbeat keeps going), then let them swell back. Dread loves a vacuum.
+  function hush(dur = 1.3) {
+    if (!ctx) return;
+    if (bed.gain) bed.gain.gain.setTargetAtTime(0.02, now(), 0.15);
+    if (wind.gain) wind.gain.gain.setTargetAtTime(0.0, now(), 0.15);
+    setTimeout(() => {
+      if (!ctx) return;
+      if (bed.gain) bed.gain.gain.setTargetAtTime(0.5, now(), 0.6);
+      if (wind.gain) wind.gain.gain.setTargetAtTime(zone === 'forest' ? 0.1 : 0.02, now(), 0.9);
+    }, dur * 1000);
+  }
+
   // ---- frame update --------------------------------------------------------
   function update(dt, lp, forward) {
     if (!started) return;
@@ -486,8 +555,8 @@ export const Audio = (() => {
 
   return {
     init, unlock, start, update, setZone, setTension, bumpHeart,
-    creak, drip, whisper, footstep, flutter, slam, doorCreak,
-    stinger, crescendo, stopCrescendo, duck, setMuffle, fadeOut, fadeIn, resetMix,
+    creak, drip, whisper, moan, distantScream, footstep, flutter, slam, doorCreak,
+    stinger, crescendo, stopCrescendo, duck, setMuffle, hush, fadeOut, fadeIn, resetMix,
     get context() { return ctx; },
     get tension() { return tension; },
     get isStarted() { return started; },
