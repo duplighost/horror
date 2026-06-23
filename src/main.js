@@ -207,6 +207,41 @@ function onResize() {
 }
 window.addEventListener('resize', onResize);
 
+// --- WebGL context loss / restore -----------------------------------------
+// Under heavy GPU/VRAM pressure the browser can drop the WebGL context. If we
+// don't preventDefault() here, it is NEVER restored — the canvas dies (white)
+// while audio keeps playing, exactly the failure that bites when a lot is
+// running at once. We pause rendering, hold a soft black veil over the frozen
+// frame, and rebuild GPU resources when the context comes back.
+let glLost = false, glLostAt = 0;
+canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  glLost = true; glLostAt = performance.now();
+  UI.fade.style.transition = 'opacity 250ms ease';
+  UI.fade.style.opacity = '0.92';
+  UI.showLoading(true);
+}, false);
+canvas.addEventListener('webglcontextrestored', () => {
+  glLost = false;
+  post.onContextRestored();
+  renderer.shadowMap.enabled = Quality.shadows && degradeStep < 1;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.3;
+  onResize();
+  UI.showLoading(false);
+  UI.fade.style.transition = 'opacity 1400ms ease';
+  UI.fade.style.opacity = '0';
+}, false);
+// safety net: if a lost context never comes back, let the player wake it
+function glWatchdog() {
+  if (glLost && performance.now() - glLostAt > 7000) {
+    UI.showEnd('the dark swallowed the light', '↻ wake');
+    UI.endcard.onclick = () => location.reload();
+  }
+}
+
 // --- adaptive performance governor ---
 let fpsAccum = 0, fpsFrames = 0, degradeStep = 0;
 function governor(dt) {
@@ -244,6 +279,7 @@ function frame(now) {
   updateMotes(dt, time);
 
   Audio.update(dt, player.pos, player.forward);
+  if (glLost) { glWatchdog(); return; }   // keep sound + sim alive, skip GL until restored
   post.render(scene, player.camera, dt);
   governor(dt);
 }

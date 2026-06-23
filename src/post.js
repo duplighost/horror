@@ -61,12 +61,13 @@ const vert = /* glsl */`
 export class Post {
   constructor(renderer) {
     this.renderer = renderer;
-    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-    this.rt = new THREE.WebGLRenderTarget(size.x, size.y, {
+    this._rtOpts = {
       minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
       type: THREE.UnsignedByteType, colorSpace: THREE.SRGBColorSpace,
       depthBuffer: true, stencilBuffer: false, samples: Quality.tier === 'high' ? 2 : 0,
-    });
+    };
+    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+    this.rt = new THREE.WebGLRenderTarget(size.x, size.y, this._rtOpts);
     this.scene = new THREE.Scene();
     this.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.uniforms = {
@@ -95,6 +96,15 @@ export class Post {
   setSize(w, h) {
     const dpr = this.renderer.getPixelRatio();
     this.rt.setSize(Math.floor(w * dpr), Math.floor(h * dpr));
+    this.uniforms.uRes.value.set(this.rt.width, this.rt.height);
+  }
+
+  // after a GPU context loss, the old framebuffer is gone — build a fresh one
+  onContextRestored() {
+    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    try { this.rt.dispose(); } catch (e) {}
+    this.rt = new THREE.WebGLRenderTarget(size.x, size.y, this._rtOpts);
+    this.uniforms.tDiffuse.value = this.rt.texture;
     this.uniforms.uRes.value.set(this.rt.width, this.rt.height);
   }
 

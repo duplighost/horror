@@ -25,11 +25,16 @@ export const UI = {
   },
 
   flashWhite(intensity = 0.85, ms = 240) {
+    // Drive the decay with a forced reflow rather than rAF: rAF callbacks are
+    // throttled in background tabs and can be starved under heavy load, which
+    // could otherwise leave the white flash stuck on. A reflow commits the peak
+    // synchronously, so the transition back to 0 always runs.
     const f = this.flash;
-    f.style.transition = 'none'; f.style.opacity = String(intensity);
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      f.style.transition = `opacity ${ms}ms ease`; f.style.opacity = '0';
-    }));
+    f.style.transition = 'none';
+    f.style.opacity = String(intensity);
+    void f.offsetWidth;
+    f.style.transition = `opacity ${ms}ms ease`;
+    f.style.opacity = '0';
   },
 
   setDread(opacity, ms = 600) {
