@@ -1,14 +1,65 @@
 import * as THREE from 'three';
 import { ColliderField } from '../collision.js';
 import { Quality, CFG } from '../config.js';
-import { groundTexture, barkTexture, softDot } from '../textures.js';
+import { groundTexture, barkTexture, leafTexture, softDot } from '../textures.js';
 import { makeKey, makeShrine, makeGravestone, makeFlame } from './props.js';
 
-// The opening: a black, fog-drowned wood of bare trees. A faint trail of
-// will-o'-wisps draws you to a shrine that holds the iron key. Beyond the trees,
-// a vast house waits with two lit windows like eyes.
+// The opening: a black, fog-drowned wood of gnarled dead trees and drifts of
+// crunching leaves. A faint trail of will-o'-wisps draws you to a shrine that
+// holds the iron key. Beyond the trees, a vast house waits with lit windows.
 
 function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+
+// concatenate several indexed geometries (already transformed) into one — used
+// to bake a branchy dead-tree into a single geometry we can instance.
+function mergeGeos(geos) {
+  let vc = 0, ic = 0;
+  for (const g of geos) { vc += g.attributes.position.count; ic += g.index ? g.index.count : g.attributes.position.count; }
+  const pos = new Float32Array(vc * 3), nor = new Float32Array(vc * 3), uv = new Float32Array(vc * 2), idx = new Uint32Array(ic);
+  let vo = 0, io = 0, base = 0;
+  for (const g of geos) {
+    const pa = g.attributes.position, na = g.attributes.normal, ua = g.attributes.uv;
+    pos.set(pa.array, vo * 3);
+    if (na) nor.set(na.array, vo * 3);
+    if (ua) uv.set(ua.array, vo * 2);
+    if (g.index) { const gi = g.index.array; for (let k = 0; k < gi.length; k++) idx[io + k] = gi[k] + base; io += gi.length; }
+    else { for (let k = 0; k < pa.count; k++) idx[io + k] = base + k; io += pa.count; }
+    vo += pa.count; base += pa.count;
+  }
+  const m = new THREE.BufferGeometry();
+  m.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  m.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  m.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  m.setIndex(new THREE.BufferAttribute(idx, 1));
+  return m;
+}
+function lumpTrunk(geo, seed) {
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const bend = Math.sin(y * 0.25 + seed) * 0.12 * (y / 9);    // leans more toward the top
+    const k = 1 + Math.sin(x * 8 + y * 2.5 + seed) * 0.06;      // lumpy bark relief
+    p.setXYZ(i, x * k + bend, y, z * k);
+  }
+  geo.computeVertexNormals(); return geo;
+}
+// one gnarled dead tree: a lumpy trunk with a handful of bare clawing branches
+function makeTreeGeo(r) {
+  const parts = [];
+  const trunk = lumpTrunk(new THREE.CylinderGeometry(0.13, 0.34, 9, 8, 5), r() * 10);
+  trunk.translate(0, 4.5, 0); parts.push(trunk);
+  const nb = 4 + (r() * 4 | 0);
+  for (let i = 0; i < nb; i++) {
+    const len = 1.0 + r() * 2.2;
+    const b = new THREE.CylinderGeometry(0.012, 0.055, len, 5);
+    b.translate(0, len / 2, 0);
+    b.rotateZ((r() < 0.5 ? 1 : -1) * (0.5 + r() * 0.85));
+    b.rotateY(r() * Math.PI * 2);
+    b.translate(0, 3.8 + r() * 4.6, 0);
+    parts.push(b);
+  }
+  return mergeGeos(parts);
+}
 
 export function buildForest(ctx) {
   const group = new THREE.Group();
@@ -48,42 +99,43 @@ export function buildForest(ctx) {
     return false;
   }
 
-  // --- trees (instanced bare trunks) ---
-  const bark = barkTexture();
-  const trunkGeo = new THREE.CylinderGeometry(0.18, 0.32, 9, 6, 3, true);
-  trunkGeo.translate(0, 4.5, 0);
-  // taper/bend a touch for unease
-  const trunkMat = new THREE.MeshStandardMaterial({ map: bark, roughness: 1, side: THREE.DoubleSide });
+  // --- trees: a few gnarled dead-tree variants, each instanced ---
+  const trunkMat = new THREE.MeshStandardMaterial({ map: barkTexture(), roughness: 0.92 });
   const maxTrees = Quality.maxInstancedTrees;
-  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, maxTrees);
-  trunks.castShadow = true; trunks.receiveShadow = true;
+  const VARIANTS = 4;
+  const variants = [];
+  for (let v = 0; v < VARIANTS; v++) variants.push({ geo: makeTreeGeo(rng(1009 + v * 31)), mats: [] });
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), pp = new THREE.Vector3();
   let n = 0;
   function placeTree(x, z, scale, lean) {
     if (n >= maxTrees) return;
+    const v = variants[(rand() * VARIANTS) | 0];
     e.set((rand() - 0.5) * lean, rand() * Math.PI * 2, (rand() - 0.5) * lean);
-    q.setFromEuler(e); sc.set(scale, scale * (0.8 + rand() * 0.6), scale); pp.set(x, 0, z);
-    m4.compose(pp, q, sc); trunks.setMatrixAt(n, m4); n++;
-    field.addCircle(x, z, 0.45 * scale, 1);
+    q.setFromEuler(e); sc.set(scale, scale * (0.85 + rand() * 0.5), scale); pp.set(x, 0, z);
+    m4.compose(pp, q, sc); v.mats.push(m4.clone());
+    field.addCircle(x, z, 0.42 * scale, 1); n++;
   }
-  // scatter
   let attempts = 0;
   while (n < maxTrees * 0.86 && attempts < maxTrees * 6) {
     attempts++;
     const x = X0 + rand() * (X1 - X0), z = Z0 + rand() * (Z1 - Z0);
     if (blocked(x, z)) continue;
-    placeTree(x, z, 0.7 + rand() * 0.8, 0.18);
+    placeTree(x, z, 0.7 + rand() * 0.8, 0.16);
   }
   // dense boundary wall of trees (the world has no edge you can reach)
   for (let i = 0; i < 240 && n < maxTrees; i++) {
-    const t = i / 240, ang = t * Math.PI * 2;
+    const ang = (i / 240) * Math.PI * 2;
     const rx = (X1 - X0) * 0.5 + 4, rz = (Z1 - Z0) * 0.5 + 4;
     const cx = (X0 + X1) / 2, cz = (Z0 + Z1) / 2;
-    const x = cx + Math.cos(ang) * rx + (rand() - 0.5) * 3;
-    const z = cz + Math.sin(ang) * rz + (rand() - 0.5) * 3;
-    placeTree(x, z, 1.0 + rand() * 0.6, 0.08);
+    placeTree(cx + Math.cos(ang) * rx + (rand() - 0.5) * 3, cz + Math.sin(ang) * rz + (rand() - 0.5) * 3, 1.0 + rand() * 0.6, 0.07);
   }
-  trunks.count = n; trunks.instanceMatrix.needsUpdate = true; group.add(trunks);
+  for (const v of variants) {
+    if (!v.mats.length) continue;
+    const im = new THREE.InstancedMesh(v.geo, trunkMat, v.mats.length);
+    im.castShadow = true; im.receiveShadow = true;
+    v.mats.forEach((mm, i) => im.setMatrixAt(i, mm));
+    im.instanceMatrix.needsUpdate = true; group.add(im);
+  }
   // hard boundary so you truly cannot leave
   field.addBox(X0 - 3, Z0 - 3, X1 + 3, Z0 - 1, 9);
   field.addBox(X0 - 3, Z1 + 1, X1 + 3, Z1 + 3, 9);
@@ -96,6 +148,37 @@ export function buildForest(ctx) {
     if (Math.hypot(gx - shrine.x, gz - shrine.z) < 1.5) continue;
     const gs = makeGravestone(); gs.position.set(gx, 0, gz); gs.rotation.y = rand() * Math.PI; group.add(gs);
     field.addCircle(gx, gz, 0.4);
+  }
+
+  // --- drifts of dead leaves you wade through ---
+  const leafMat = new THREE.MeshStandardMaterial({ map: leafTexture(), roughness: 0.95 });
+  function leafPile(x, z, s) {
+    const geo = new THREE.IcosahedronGeometry(1, 2);
+    const p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const vx = p.getX(i), vy = p.getY(i), vz = p.getZ(i);
+      const k = 1 + Math.sin(vx * 5 + vz * 4) * 0.22;
+      p.setXYZ(i, vx * k, Math.max(0, vy) * 0.34 * k, vz * k);   // flattened, lumpy mound
+    }
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, leafMat);
+    m.scale.setScalar(s); m.position.set(x, 0, z); m.rotation.y = rand() * Math.PI;
+    m.castShadow = true; m.receiveShadow = true; group.add(m);
+  }
+  const bigPiles = [];
+  for (let i = 0; i < 48; i++) {
+    const x = X0 + rand() * (X1 - X0), z = Z0 + rand() * (Z1 - Z0);
+    if (blocked(x, z)) continue;
+    const s = 0.5 + rand() * 0.95;
+    leafPile(x, z, s);
+    if (s > 1.15 && bigPiles.length < 4) bigPiles.push([x, z]);
+  }
+  // the bigger drifts rustle as you approach — and something might be in them
+  for (const [px, pz] of bigPiles) {
+    ctx.triggers.push({ x: px, z: pz, r: 3, cooldown: 9, onEnter: (c) => {
+      c.audio.rustle(new THREE.Vector3(px, 0.3, pz));
+      if (Math.random() < 0.4) c.director.peripheral();
+    } });
   }
 
   // --- a rusted iron fence running along the left of the approach ---

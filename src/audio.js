@@ -288,18 +288,45 @@ export const Audio = (() => {
     lp.connect(g); g.connect(p.in); p.out.connect(master); p.out.connect(conv);
   }
 
-  function footstep(pos, wet = false) {
+  // surface: 'dry' | 'wet' | 'leaf'  (legacy boolean true === 'wet')
+  function footstep(pos, surface = 'dry') {
     if (!ctx) return;
+    if (surface === true) surface = 'wet'; else if (surface === false) surface = 'dry';
     const t = now(); const p = panFor(pos);
     const s = noiseSource(false);
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
-    lp.frequency.value = wet ? 900 : 1600;
+    const f = ctx.createBiquadFilter();
+    if (surface === 'leaf') { f.type = 'highpass'; f.frequency.value = 700; }
+    else { f.type = 'lowpass'; f.frequency.value = surface === 'wet' ? 900 : 1600; }
     const g = ctx.createGain();
+    const peak = surface === 'wet' ? 0.05 : surface === 'leaf' ? 0.045 : 0.04;
+    const dur = surface === 'wet' ? 0.18 : surface === 'leaf' ? 0.14 : 0.1;
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(wet ? 0.05 : 0.04, t + 0.005);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + (wet ? 0.18 : 0.1));
-    s.connect(lp); lp.connect(g); g.connect(p.in); p.out.connect(master);
+    g.gain.exponentialRampToValueAtTime(peak, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f); f.connect(g); g.connect(p.in); p.out.connect(master);
     s.start(t); s.stop(t + 0.2);
+    if (surface === 'leaf') {                       // a couple of dry crackles
+      for (let i = 0; i < 2; i++) {
+        const cs = noiseSource(false), cg = ctx.createGain(), hp = ctx.createBiquadFilter();
+        hp.type = 'highpass'; hp.frequency.value = 3000; const tt = t + 0.015 + i * 0.03;
+        cg.gain.setValueAtTime(0.03, tt); cg.gain.exponentialRampToValueAtTime(0.0001, tt + 0.03);
+        cs.connect(hp); hp.connect(cg); cg.connect(p.in); cs.start(tt); cs.stop(tt + 0.04);
+      }
+    }
+  }
+
+  // a fuller, louder rustle of dry leaves (something shifting in a pile)
+  function rustle(pos) {
+    if (!ctx) return;
+    const t = now(); const p = panFor(pos);
+    for (let i = 0; i < 8; i++) {
+      const s = noiseSource(false), g = ctx.createGain(), hp = ctx.createBiquadFilter();
+      hp.type = 'highpass'; hp.frequency.value = 2200; const tt = t + i * 0.05 + Math.random() * 0.03;
+      g.gain.setValueAtTime(0.0001, tt); g.gain.exponentialRampToValueAtTime(0.045, tt + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.09);
+      s.connect(hp); hp.connect(g); g.connect(p.in); s.start(tt); s.stop(tt + 0.12);
+    }
+    p.out.connect(master); p.out.connect(conv);
   }
 
   function flutter(pos) {
@@ -561,7 +588,7 @@ export const Audio = (() => {
 
   return {
     init, unlock, start, update, setZone, setTension, bumpHeart,
-    creak, drip, whisper, moan, distantScream, footstep, flutter, slam, doorCreak,
+    creak, drip, whisper, moan, distantScream, footstep, rustle, flutter, slam, doorCreak,
     stinger, crescendo, stopCrescendo, duck, setMuffle, hush, fadeOut, fadeIn, resetMix,
     get context() { return ctx; },
     get tension() { return tension; },

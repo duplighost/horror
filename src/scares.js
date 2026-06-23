@@ -60,15 +60,16 @@ export class Director {
     if (this.entity.isVisible || this.ended) return;
     this.entity.spawnAt(x, z, this.player.pos.x, this.player.pos.z, 'idle', { dwell: 0.5 });
   }
-  // spawn just outside your view, behind/beside you
+  // appear at the EDGE of your vision (not fully behind) so you actually catch a
+  // glimpse of it standing in the fog — then it's gone the moment you look at it.
   peripheral() {
     if (this.entity.isVisible || this.ended) return;
-    const p = this.player.pos, fy = this.player.yaw;
-    const ang = fy + (Math.random() < 0.5 ? 1 : -1) * (1.6 + Math.random() * 0.8);
-    const d = 7 + Math.random() * 4;
-    const x = p.x + Math.sin(ang) * d, z = p.z + Math.cos(ang) * d;
-    this.entity.spawnAt(x, z, p.x, p.z, 'idle', { dwell: 0.35 });
-    Audio.bumpHeart(0.5, 90);
+    const p = this.player.pos;
+    const fwd = this.player.yaw + Math.PI;                                  // world-angle of forward (atan2(x,z))
+    const off = (Math.random() < 0.5 ? 1 : -1) * (0.6 + Math.random() * 0.7); // ~35-75° off centre
+    const ang = fwd + off, d = 8 + Math.random() * 6;
+    this.entity.spawnAt(p.x + Math.sin(ang) * d, p.z + Math.cos(ang) * d, p.x, p.z, 'idle', { dwell: 0.4 });
+    Audio.bumpHeart(0.45, 88);
   }
   crossPath(ax, az, bx, bz) {
     if (this.ended) return;
@@ -234,7 +235,7 @@ export class Director {
       [1 + t * 2, () => Audio.moan(this._near(14, 1.5))],
       [t * 2.2, () => Audio.distantScream(this._near(20, 2))],
       [t * 3, () => { if (t > 0.3) this._approachFootsteps(); }],
-      [t * 3, () => { if (t > 0.35 && !this.entity.isVisible) this.peripheral(); }],
+      [0.6 + t * 4, () => { if (t > 0.2 && !this.entity.isVisible) this.peripheral(); }],   // glimpses, more often
       [1 + t * 1.5, () => { if (t > 0.3) this._torchStutter(); }],
     ];
     const total = opts.reduce((s, o) => s + o[0], 0);

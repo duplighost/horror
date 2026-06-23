@@ -80,22 +80,52 @@ export function groundTexture() {
   });
 }
 
-// --- tree bark ---------------------------------------------------------------
+// --- tree bark: deep grooves, raised ridges, knots, patches of moss ----------
 export function barkTexture() {
   return cached('bark', () => {
-    const S = 256, [c, ctx] = canvas(S);
+    const S = 512, [c, ctx] = canvas(S);
     const fbm = makeNoise(31);
     const img = ctx.createImageData(S, S), d = img.data;
     for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-      // vertical streaks
-      const v = fbm(x / 6, y / 60, 4);
-      const grain = fbm(x / 2, y / 3, 3);
-      const ridge = Math.abs(Math.sin((x / S) * Math.PI * 9 + v * 6));
-      let l = 16 + v * 20 + grain * 10 - ridge * 10;
+      const fib = fbm(x / 4, y / 110, 5);                               // vertical fibre
+      const warp = fbm(x / 30, y / 60, 3) * 8;
+      const groove = Math.abs(Math.sin((x / S) * Math.PI * 20 + warp + fib * 4));
+      const ridge = Math.pow(groove, 0.45);                            // 0 in cracks, 1 on ridges
+      const knot = fbm(x / 38 + 5, y / 38, 3);
+      let l = 8 + fib * 14 + ridge * 26 - (1 - ridge) * 12;
+      if (knot > 0.83) l *= 0.45;                                      // dark knots
+      const moss = Math.max(0, fbm(x / 22, y / 22 + 9, 3) - 0.6) * 3.0; // greenish patches
       const i = (y * S + x) * 4;
-      d[i] = l * 1.0; d[i + 1] = l * 0.86; d[i + 2] = l * 0.66; d[i + 3] = 255;
+      d[i] = Math.max(0, l * 1.05);
+      d[i + 1] = Math.max(0, l * 0.9 + moss * 14);
+      d[i + 2] = Math.max(0, l * 0.62 + moss * 5);
+      d[i + 3] = 255;
     }
     ctx.putImageData(img, 0, 0);
+    const t = finalize(c, 1); t.repeat.set(1.6, 4.0);                  // tile so detail reads on a tall trunk
+    return t;
+  });
+}
+
+// --- crunchy autumn leaf litter ----------------------------------------------
+export function leafTexture() {
+  return cached('leaf', () => {
+    const S = 256, [c, ctx] = canvas(S);
+    ctx.fillStyle = '#1c1206'; ctx.fillRect(0, 0, S, S);
+    const rnd = mulberry32(55);
+    for (let i = 0; i < 300; i++) {
+      const x = rnd() * S, y = rnd() * S, r = 4 + rnd() * 11, a = rnd() * Math.PI;
+      const warm = rnd();
+      const col = warm < 0.45 ? [120 + rnd() * 70, 55 + rnd() * 45, 18 + rnd() * 14]   // orange
+                : warm < 0.8 ? [80 + rnd() * 40, 42 + rnd() * 30, 16 + rnd() * 10]      // brown
+                : [50 + rnd() * 30, 55 + rnd() * 30, 24];                                // sickly green
+      ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+      ctx.fillStyle = `rgb(${col[0] | 0},${col[1] | 0},${col[2] | 0})`;
+      ctx.beginPath(); ctx.ellipse(0, 0, r, r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(-r, 0); ctx.lineTo(r, 0); ctx.stroke();
+      ctx.restore();
+    }
     return finalize(c, 1);
   });
 }

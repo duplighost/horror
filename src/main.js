@@ -282,11 +282,12 @@ function governor(dt) {
 let stepDist = 0, lastThud = 0;
 function playerFeedback(info, dt) {
   if (!info) return;
-  const wet = currentLevel && (currentLevel.name === 'basement' || currentLevel.name === 'final');
+  const zone = currentLevel ? currentLevel.name : 'forest';
+  const surface = zone === 'forest' ? 'leaf' : (zone === 'basement' || zone === 'final') ? 'wet' : 'dry';
   if (info.moving && info.horizSpeed > 0.5) {
     stepDist += info.horizSpeed * dt;        // cadence by distance travelled
     const stride = info.running ? 1.5 : 2.0;
-    if (stepDist >= stride) { stepDist = 0; Audio.footstep(player.pos, wet); }
+    if (stepDist >= stride) { stepDist = 0; Audio.footstep(player.pos, surface); }
   }
   if (info.hitWall && info.horizSpeed > 1.2 && time - lastThud > 0.45) {
     lastThud = time; Audio.footstep(player.pos, true);   // a soft body thud
