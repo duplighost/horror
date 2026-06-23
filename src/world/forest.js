@@ -103,7 +103,6 @@ export function buildForest(ctx) {
   const barGeo = new THREE.CylinderGeometry(0.03, 0.03, 1.5, 5);
   const tipGeo = new THREE.ConeGeometry(0.05, 0.18, 5);
   const fenceX = -3.2;
-  const bars = [];
   for (let z = 2; z >= -16; z -= 0.32) {
     const bar = new THREE.Mesh(barGeo, ironMat); bar.position.set(fenceX, 0.75, z); group.add(bar);
     const tip = new THREE.Mesh(tipGeo, ironMat); tip.position.set(fenceX, 1.6, z); group.add(tip);

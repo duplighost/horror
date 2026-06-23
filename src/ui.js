@@ -5,8 +5,11 @@
 const $ = (id) => document.getElementById(id);
 
 export const UI = {
-  fade: $('fade'), flash: $('flash'), dread: $('dread'), reticle: $('reticle'),
+  fade: $('fade'), flash: $('flash'), reticle: $('reticle'),
   boot: $('boot'), loading: $('loading'), endcard: $('endcard'), mobhint: $('mobhint'),
+
+  // haptics: a short buzz on mobile for stingers and the worst moments
+  buzz(pattern) { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {} },
 
   fadeTo(opacity, ms = 1200) {
     this.fade.style.transition = `opacity ${ms}ms ease`;
@@ -35,11 +38,6 @@ export const UI = {
     void f.offsetWidth;
     f.style.transition = `opacity ${ms}ms ease`;
     f.style.opacity = '0';
-  },
-
-  setDread(opacity, ms = 600) {
-    this.dread.style.transition = `opacity ${ms}ms ease`;
-    this.dread.style.opacity = String(opacity);
   },
 
   setReticle(active) { this.reticle.classList.toggle('active', active); },

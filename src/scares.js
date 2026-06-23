@@ -25,7 +25,20 @@ export class Director {
   }
 
   setField(f) { this.field = f; }
-  reset() { this.entity.despawn(Audio, true); this.chaseActive = false; }
+
+  // Full reset for a clean replay — clears the Presence, the objective, every
+  // timer, and any leftover player state (frozen / forced-look / dimmed torch).
+  reset() {
+    this.entity.despawn(Audio, true);
+    this.chaseActive = false;
+    this.ended = false;
+    this.objective = 'forest';
+    this.flickering = false; this.flick = 1; this.flickT = 0;
+    this.nextFlicker = 6 + Math.random() * 6;
+    this.ambientTimer = 4 + Math.random() * 4;
+    this.player.flicker = 1; this.player.flashOn = true;
+    this.player.frozen = false; this.player.speedScale = 1; this.player.releaseLook();
+  }
 
   setObjective(name) {
     this.objective = name;
@@ -63,12 +76,16 @@ export class Director {
   }
 
   // ---- scripted beats ------------------------------------------------------
+  // One call lands a full jump-scare: audio stinger, white flash, post pulse,
+  // camera shake, a heartbeat punch, and a haptic buzz on mobile.
   stinger(type, pos) {
+    const hard = type === 'shriekHard';
     Audio.stinger(type);
-    this.ctx.ui.flashWhite(type === 'shriekHard' ? 0.95 : 0.7, 220);
+    this.ctx.ui.flashWhite(hard ? 0.95 : (type === 'breath' ? 0.35 : 0.7), 220);
     this.ctx.post.kick('pulse', 0.7);
-    this.player.addShake(type === 'shriekHard' ? 1.2 : 0.7);
+    this.player.addShake(hard ? 1.2 : 0.7);
     Audio.bumpHeart(1, 110);
+    this.ctx.ui.buzz(hard ? [70, 50, 140] : (type === 'breath' ? 30 : 60));
   }
 
   pickupScare(pos) {
@@ -198,7 +215,8 @@ export class Director {
     setTimeout(() => {
       this.entity.spawnAt(p.pos.x + Math.sin(a) * 3, p.pos.z + Math.cos(a) * 3, p.pos.x, p.pos.z, 'idle', { dwell: 0.1 });
       p.flashOn = true;
-      this.stinger('shriek');
+      // vary the punchline so it isn't always the same shriek
+      this.stinger(Math.random() < 0.45 ? 'breath' : 'shriek');
     }, 500 + Math.random() * 500);
   }
 }

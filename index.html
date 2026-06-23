@@ -28,9 +28,6 @@
   /* White flash for stingers / jump scares */
   #flash { background: #fff; opacity: 0; mix-blend-mode: screen; z-index: 31; }
 
-  /* Blood / red pulse used near the end and on contact */
-  #dread { background: radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(60,0,0,0.0) 100%); opacity: 0; z-index: 25; }
-
   /* Center reticle: a barely-there dot that reacts to interactables. Almost no UI. */
   #reticle {
     position: fixed; left: 50%; top: 50%; width: 7px; height: 7px;
@@ -53,7 +50,7 @@
   #title {
     font-size: clamp(42px, 12vw, 120px); letter-spacing: 0.42em;
     font-weight: 400; text-indent: 0.42em;
-    color: #8d8madd; color: #7c766b;
+    color: #7c766b;
     text-shadow: 0 0 22px rgba(0,0,0,0.9);
     opacity: 0; animation: breathe 6s ease-in-out infinite, fadein 5s ease forwards;
   }
@@ -94,7 +91,6 @@
 <body>
   <canvas id="game"></canvas>
 
-  <div id="dread" class="layer"></div>
   <div id="reticle"></div>
   <div id="mobhint" class="layer"></div>
   <div id="flash" class="layer"></div>

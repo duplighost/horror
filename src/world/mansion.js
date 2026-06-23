@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ColliderField } from '../collision.js';
 import { CFG } from '../config.js';
-import { generateMaze, farthestCell, deadEnds, bfs } from './maze.js';
+import { generateMaze, farthestCell, deadEnds } from './maze.js';
 import { wallpaperTexture, woodFloorTexture, softDot } from '../textures.js';
 import {
   makeKey, makeDoor, makeFlame, makePortrait, makeTable, makeChair,
@@ -147,7 +147,6 @@ export function buildMansion(ctx) {
   });
 
   // --- furnish rooms & hang portraits on closed walls ---
-  const dist = bfs(maze, start.x, start.y);
   const portraits = [];
   let candleBudget = 7;
   for (let x = 0; x < cols; x++) for (let y = 0; y < rows; y++) {

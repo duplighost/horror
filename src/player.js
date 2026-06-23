@@ -85,11 +85,11 @@ export class Player {
     this.flicker = 1;           // multiplier driven by scare system
   }
 
+  // The flashlight, its target, and the lens fill light live in the scene (not
+  // parented to the camera) so shadows update correctly; they persist for the
+  // whole game, so there's no matching remove.
   addToScene(scene) {
     scene.add(this.flashlight); scene.add(this.flashTarget); scene.add(this.lens);
-  }
-  removeFromScene(scene) {
-    scene.remove(this.flashlight); scene.remove(this.flashTarget); scene.remove(this.lens);
   }
 
   teleport(x, z, yaw) {

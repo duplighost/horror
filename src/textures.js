@@ -286,7 +286,3 @@ export function softDot(color = '#ffffff') {
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
-
-export function disposeTextureCache() {
-  for (const k in cache) { cache[k]?.dispose?.(); delete cache[k]; }
-}

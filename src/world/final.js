@@ -67,7 +67,6 @@ export function buildFinal(ctx) {
 
   const H = 4.0;
   // corridor: z 2 -> -16, width 3
-  const fw = 16, fcz = -18, cw2 = 6;
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 40), wetFloorMat);
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, -14); floor.receiveShadow = true; group.add(floor);
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(16, 40), new THREE.MeshStandardMaterial({ color: 0x050203 }));

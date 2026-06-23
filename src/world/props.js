@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { portraitTexture, softDot, woodFloorTexture } from '../textures.js';
+import { portraitTexture, softDot } from '../textures.js';
 
 // Reusable set-dressing and interactables. Kept low-poly and dark; the dread is
 // in the lighting and sound, not the polygon count.

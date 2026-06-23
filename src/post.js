@@ -10,7 +10,7 @@ const frag = /* glsl */`
   precision highp float;
   uniform sampler2D tDiffuse;
   uniform vec2 uRes;
-  uniform float uTime, uVignette, uAberr, uGrain, uDesat, uDread, uTunnel, uPulse;
+  uniform float uTime, uVignette, uAberration, uGrain, uDesat, uDread, uTunnel, uPulse;
   varying vec2 vUv;
 
   float hash(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p+45.32); return fract(p.x*p.y); }
@@ -21,7 +21,7 @@ const frag = /* glsl */`
     float r = length(c) * 1.41421;
 
     // chromatic aberration grows toward the edges
-    float a = uAberr * (0.25 + r*1.6);
+    float a = uAberration * (0.25 + r*1.6);
     vec3 col;
     col.r = texture2D(tDiffuse, uv + c*a).r;
     col.g = texture2D(tDiffuse, uv).g;
@@ -75,7 +75,7 @@ export class Post {
       uRes: { value: new THREE.Vector2(size.x, size.y) },
       uTime: { value: 0 },
       uVignette: { value: 1.0 },
-      uAberr: { value: 0.0015 },
+      uAberration: { value: 0.0015 },
       uGrain: { value: Quality.grain ? 1.0 : 0.0 },
       uDesat: { value: 0.25 },
       uDread: { value: 0.0 },
@@ -90,7 +90,7 @@ export class Post {
     this.scene.add(quad);
 
     // tween targets so effects ease instead of snap
-    this.target = { vignette: 1.0, aberr: 0.0015, desat: 0.25, dread: 0.0, tunnel: 0.0, pulse: 0.0 };
+    this.target = { vignette: 1.0, aberration: 0.0015, desat: 0.25, dread: 0.0, tunnel: 0.0, pulse: 0.0 };
   }
 
   setSize(w, h) {
@@ -116,7 +116,7 @@ export class Post {
     // ease uniforms toward targets
     const u = this.uniforms, k = Math.min(1, dt * 3.5);
     u.uVignette.value += (this.target.vignette - u.uVignette.value) * k;
-    u.uAberr.value += (this.target.aberr - u.uAberr.value) * k;
+    u.uAberration.value += (this.target.aberration - u.uAberration.value) * k;
     u.uDesat.value += (this.target.desat - u.uDesat.value) * k;
     u.uDread.value += (this.target.dread - u.uDread.value) * k;
     u.uTunnel.value += (this.target.tunnel - u.uTunnel.value) * k;

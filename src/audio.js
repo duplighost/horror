@@ -15,7 +15,11 @@ export const Audio = (() => {
   // live beds we keep references to
   const bed = { osc: [], gain: null, lp: null, lfo: [], sub: null, subGain: null, dissGain: null };
   const wind = { src: null, gain: null, bp: null, lfo: null };
-  let heart = { gain: null, rate: 0, intensity: 0, next: 0, on: false };
+  // Heartbeat model. `rate` (BPM) eases toward a dread-scaled resting rate every
+  // frame, so it rises AND falls — never a one-way ratchet. `spike` is a 0..1
+  // transient loudness kick from scares that decays over ~1s; the steady level
+  // comes from tension. Both can jump up sharply but always settle back down.
+  let heart = { gain: null, on: false, next: 0, rate: 60, spike: 0 };
   let tension = 0, targetTension = 0;
   let zone = 'forest';
 
@@ -169,7 +173,7 @@ export const Audio = (() => {
 
   function startHeart() {
     heart.gain = ctx.createGain(); heart.gain.value = 1.0; out(heart.gain);
-    heart.on = true; heart.next = now() + 1;
+    heart.on = true; heart.next = now() + 1; heart.rate = 60; heart.spike = 0;
   }
 
   function thump(t, freq, gain, dur) {
@@ -189,7 +193,8 @@ export const Audio = (() => {
     const t = now();
     while (heart.next < t + 0.2) {
       const beatT = Math.max(heart.next, t + 0.02);
-      const gain = 0.25 + heart.intensity * 0.9;
+      const loud = Math.min(1, tension * 0.7 + heart.spike);  // steady dread + transient punch
+      const gain = 0.22 + loud * 0.95;
       thump(beatT, 46, gain, 0.18);
       thump(beatT + 0.22, 40, gain * 0.7, 0.16); // dub
       const interval = 60 / Math.max(40, heart.rate);
@@ -415,10 +420,12 @@ export const Audio = (() => {
     if (bed.subGain) bed.subGain.gain.setTargetAtTime(0.12 + tension * 0.5, now(), 0.4);
     if (wind.gain && zone === 'forest') { /* wind handled by its own lfo */ }
 
-    // heartbeat presence scales with tension (director can override via setHeart)
+    // heartbeat: ease the rate toward a dread-scaled resting BPM (up or down),
+    // and let any scare spike fade out over ~1s.
     if (heart.on) {
-      heart.rate = Math.max(heart.rate, 52 + tension * 46);
-      heart.intensity = Math.max(0, Math.min(1, tension * 0.8 + heart.intensity * 0.0));
+      const restingRate = 52 + tension * 46;
+      heart.rate += (restingRate - heart.rate) * Math.min(1, dt * 0.8);
+      heart.spike = Math.max(0, heart.spike - dt * 1.1);
       scheduleHeart();
     }
   }
@@ -426,6 +433,7 @@ export const Audio = (() => {
   // ---- lifecycle -----------------------------------------------------------
   function unlock() {
     init();
+    if (!ctx) return;            // AudioContext unavailable (e.g. headless) — bail safely
     if (ctx.state === 'suspended') ctx.resume();
     // iOS unlock: play a silent blip
     if (!unlocked) {
@@ -454,13 +462,32 @@ export const Audio = (() => {
   }
 
   function setTension(v) { targetTension = Math.max(0, Math.min(1, v)); }
-  function bumpHeart(intensity, rate) { heart.intensity = Math.max(heart.intensity, intensity); if (rate) heart.rate = Math.max(heart.rate, rate); }
+
+  // A scare can punch the heartbeat: `intensity` (0..1) adds a decaying loudness
+  // spike, and `rate` can jolt the BPM up instantly (it eases back down later).
+  function bumpHeart(intensity = 0, rate = 0) {
+    heart.spike = Math.max(heart.spike, intensity);
+    if (rate) heart.rate = Math.max(heart.rate, rate);
+  }
+
   function fadeOut(time = 2) { if (master) master.gain.setTargetAtTime(0.0001, now(), time / 3); }
+  function fadeIn(time = 3) { if (master) { master.gain.cancelScheduledValues(now()); master.gain.setTargetAtTime(0.9, now(), time / 3); } }
+
+  // Restore the whole mix after the ending faded it to silence. start() can't
+  // re-run (we're already started), so a replay would otherwise be mute.
+  function resetMix() {
+    if (!ctx) return;
+    setMuffle(20000, 0.4);
+    if (bed.gain) bed.gain.gain.setTargetAtTime(0.5, now(), 0.5);   // undo any ducking
+    heart.spike = 0; heart.rate = 60;
+    tension = 0; targetTension = 0.12;
+    fadeIn(2.5);
+  }
 
   return {
     init, unlock, start, update, setZone, setTension, bumpHeart,
     creak, drip, whisper, footstep, flutter, slam, doorCreak,
-    stinger, crescendo, stopCrescendo, duck, setMuffle, fadeOut,
+    stinger, crescendo, stopCrescendo, duck, setMuffle, fadeOut, fadeIn, resetMix,
     get context() { return ctx; },
     get tension() { return tension; },
     get isStarted() { return started; },

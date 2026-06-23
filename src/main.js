@@ -138,6 +138,10 @@ function go(name, opts = {}) {
 
 // --- triggers ---
 function updateTriggers() {
+  // Don't fire world triggers while a level transition is in flight — the player
+  // is being repositioned/faded, and a trigger that calls go() here would be
+  // blocked by the transition guard yet still mark itself fired (consumed).
+  if (transitioning) return;
   const p = player.pos, nowS = performance.now() / 1000;
   for (const t of activeTriggers) {
     const inside = Math.hypot(p.x - t.x, p.z - t.z) < t.r;
@@ -156,11 +160,12 @@ function endGame() {
 }
 UI.endcard.addEventListener('click', () => {
   UI.hideEnd();
-  // soft restart
+  // soft restart: fresh inventory, Director + player state reset, post + mix
+  // restored (the ending faded audio to silence — bring it back).
   ctx.inventory.clear();
-  director.ended = false; director.reset();
+  director.reset();
   post.set('dread', 0); post.set('tunnel', 0); post.set('desat', 0.25); post.set('aberration', 0.0015);
-  Audio.setTension(0.15); Audio.stopCrescendo();
+  Audio.stopCrescendo(); Audio.resetMix();
   loadLevel('forest');
   UI.fade.style.transition = 'opacity 1.6s ease';
   requestAnimationFrame(() => { UI.fade.style.opacity = '0'; });
@@ -223,6 +228,7 @@ canvas.addEventListener('webglcontextlost', (e) => {
 }, false);
 canvas.addEventListener('webglcontextrestored', () => {
   glLost = false;
+  UI.hideEnd(); UI.endcard.onclick = null;   // dismiss any watchdog "wake" prompt
   post.onContextRestored();
   renderer.shadowMap.enabled = Quality.shadows && degradeStep < 1;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -252,8 +258,29 @@ function governor(dt) {
       degradeStep++;
       if (degradeStep === 1 && renderer.shadowMap.enabled) { renderer.shadowMap.enabled = false; player.flashlight.castShadow = false; }
       else if (degradeStep === 2) { const pr = Math.max(0.75, renderer.getPixelRatio() * 0.8); renderer.setPixelRatio(pr); post.setSize(window.innerWidth, window.innerHeight); }
-      else if (degradeStep === 3) { Quality.fogDensityScale = 1.15; if (motes) { scene.remove(motes); motes = null; } }
+      else if (degradeStep === 3) {
+        Quality.fogDensityScale = 1.15;
+        if (scene.fog && currentLevel) scene.fog.density = currentLevel.fog.density * Quality.fogDensityScale;
+        if (motes) { scene.remove(motes); motes = null; }
+      }
     }
+  }
+}
+
+// Player body audio: footsteps cadenced by distance travelled (so they speed up
+// when you run), plus a soft thud when you walk into something. player.update()
+// returns this movement summary each frame.
+let stepDist = 0, lastThud = 0;
+function playerFeedback(info, dt) {
+  if (!info) return;
+  const wet = currentLevel && (currentLevel.name === 'basement' || currentLevel.name === 'final');
+  if (info.moving && info.horizSpeed > 0.5) {
+    stepDist += info.horizSpeed * dt;        // cadence by distance travelled
+    const stride = info.running ? 1.5 : 2.0;
+    if (stepDist >= stride) { stepDist = 0; Audio.footstep(player.pos, wet); }
+  }
+  if (info.hitWall && info.horizSpeed > 1.2 && time - lastThud > 0.45) {
+    lastThud = time; Audio.footstep(player.pos, true);   // a soft body thud
   }
 }
 
@@ -265,7 +292,7 @@ function frame(now) {
   time += dt;
 
   controls.update(dt);
-  player.update(dt, controls);
+  playerFeedback(player.update(dt, controls), dt);
 
   interaction.update(player);
   if (controls.consumeInteract()) interaction.tryUse(ctx);

@@ -81,11 +81,14 @@ export function buildBasement(ctx) {
     group.add(f); flames.push(f);
   }
 
-  // --- the pull: a red glowing doorway at the farthest cell ---
+  // --- the pull: a red glowing doorway at the farthest cell. Two crossed,
+  //     double-sided planes so it reads as a doorway from any approach. ---
   const ex = cw(far.cell[0]), ez = cw(far.cell[1]);
-  const portal = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 2.1),
-    new THREE.MeshBasicMaterial({ color: 0x330002, transparent: true, opacity: 0.92 }));
+  const portalMat = new THREE.MeshBasicMaterial({ color: 0x330002, transparent: true, opacity: 0.92, side: THREE.DoubleSide });
+  const portal = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 2.1), portalMat);
   portal.position.set(ex, 1.05, ez); group.add(portal);
+  const portalX = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 2.1), portalMat);
+  portalX.position.set(ex, 1.05, ez); portalX.rotation.y = Math.PI / 2; group.add(portalX);
   const portalLight = new THREE.PointLight(0xff1020, 10, 10, 2); portalLight.position.set(ex, 1.2, ez); group.add(portalLight);
   ctx.triggers.push({ x: ex, z: ez, r: 1.3, once: true, onEnter: (c) => { c.director.stopChase(); c.go('final'); } });
 
@@ -99,8 +102,9 @@ export function buildBasement(ctx) {
       c.audio.whisper(c.player.pos); c.audio.drip(c.player.pos);
     }, 70);
   }
-  ctx.triggers.push({ x: cw(3), z: cw(3), r: 1.0, cooldown: 3, onEnter: (c) => slip(c, 0) });
-  ctx.triggers.push({ x: cw(2), z: cw(5), r: 1.0, cooldown: 3, onEnter: (c) => slip(c, 1) });
+  // small radius + long cooldown: a rare "reality broke" jolt, never a maze tax
+  ctx.triggers.push({ x: cw(3), z: cw(3), r: 0.6, cooldown: 12, onEnter: (c) => slip(c, 0) });
+  ctx.triggers.push({ x: cw(2), z: cw(5), r: 0.6, cooldown: 12, onEnter: (c) => slip(c, 1) });
 
   // --- scares: a lurker, then a chase toward the portal ---
   const midKey = [Math.round(far.cell[0] / 2), Math.round(far.cell[1] / 2)];
