@@ -34,6 +34,9 @@ export class Director {
     this._halluTok = 0;
     this._plunging = false;
     this._sentinel = null;        // the threshold guardian standing on your objective
+    this._hunting = false;        // a stalk/chase is in progress
+    this._huntTimer = 16;         // seconds until the next hunt
+    this._huntLost = 0;           // how long you've been out of its reach
   }
 
   _nowS() { return performance.now() / 1000; }
@@ -65,6 +68,9 @@ export class Director {
     this.chaseActive = false;
     this._plunging = false;
     this._sentinel = null;
+    this._hunting = false;
+    this._huntTimer = 14 + Math.random() * 8;
+    this._huntLost = 0;
     this.ended = false;
     this.flickering = false; this.flickT = 0; this.flickerSeed = Math.random() * 20;
     this.dreadTimer = 4 + Math.random() * 4;
@@ -320,6 +326,133 @@ export class Director {
     this.player.speedScale = Math.min(this.player.speedScale, 1 - near * 0.4);   // dread-walk into it
   }
 
+  // ---- THE HUNT: a predator in the dark ------------------------------------
+  // Not a spook that pops and vanishes. A thing that comes for you — you hear it
+  // closing in (its footsteps, your own heart), it commits to a chase when it
+  // catches sight of you, and if it reaches you it HAS you. This is the fear the
+  // whole game hangs on; it grows the deeper you go.
+  _huntIntensity() {
+    // The forest is the quiet opening — it establishes the dread before the
+    // predator arrives. From the house on, something is hunting you, and it gets
+    // worse the deeper you go. (The basement keeps its own scripted chase.)
+    return {
+      mansion: 0.30,
+      conservatory: 0.40, library: 0.48, nursery: 0.58,
+      bathhouse: 0.68, gallery: 0.80, chapel: 0.92,
+    }[this.zone] || 0;
+  }
+  _updateHunt(dt) {
+    const intensity = this._huntIntensity();
+    if (intensity <= 0 || this.ended || this._plunging) return;
+    const e = this.entity;
+
+    if (!this._hunting) {
+      this._huntTimer -= dt;
+      // only begin a hunt when the Presence is free (no guardian / scripted beat)
+      if (this._huntTimer <= 0 && !e.isVisible && !this._sentinel) this._beginStalk(intensity);
+      return;
+    }
+
+    // a hunt is live. If a scripted beat or the guardian stole the entity, end it.
+    if (!e.isVisible || e.mode !== 'chase') { this._endHunt(); return; }
+
+    const d = e.distanceTo(this.player.pos);
+    const near = THREE.MathUtils.clamp(1 - d / 15, 0, 1);
+    // a low sound FROM the creature now and then, so you can place it in the dark
+    // — a wet drag, a breath. The closer it is, the more often you hear it.
+    this._huntSoundT -= dt;
+    if (this._huntSoundT <= 0) {
+      this._huntSoundT = (3.4 - near * 1.8) + Math.random() * 2;
+      const cp = new THREE.Vector3(e.pos.x, 1.3, e.pos.z);
+      if (Math.random() < 0.5) Audio.moan(cp); else Audio.whisper(cp);
+    }
+    // the sustained dread: it gets louder, your heart and breath climb, the
+    // picture tightens — all keyed to how close the thing actually is.
+    Audio.setTension(Math.max(Audio.tension, 0.42 + near * 0.5));
+    if (near > 0.28) { Audio.bumpHeart(near * 0.32, 78 + near * 62); Audio.bumpBreath?.(near * 0.5); }
+    this.ctx.post.set('dread', Math.max(this.ctx.post.target.dread || 0, near * 0.55));
+    this.ctx.post.set('aberration', 0.0015 + near * near * 0.004);
+
+    // it stalks slowly until it has eyes on you and is close — then it COMMITS
+    const sees = e.observedTime > 0.04 || d < 3.5;
+    e.speed = (sees && d < 9) ? (3.3 + intensity * 1.4) : (1.4 + intensity * 0.8);
+
+    // If maze walls stall it (no pathfinding, it just slides), and you can't see
+    // it, it "finds another way in" — relocate closer, behind you, out of sight.
+    // So the dread keeps closing in instead of the hunt quietly dying in a corner.
+    if (d < this._huntLastD - 0.15) this._huntStuckT = 0; else this._huntStuckT += dt;
+    this._huntLastD = d;
+    if (this._huntStuckT > 4.5 && !sees && d > 5) { this._repositionHunter(8.5); this._huntStuckT = 0; }
+
+    // put real distance between you and it loses you — a held breath of relief
+    if (d > 22) { this._huntLost += dt; if (this._huntLost > 3.2) { Audio.hush(1.3); this._endHunt(); } }
+    else this._huntLost = 0;
+  }
+  _repositionHunter(dist) {
+    const p = this.player;
+    let sx = p.pos.x - p.forward.x * dist, sz = p.pos.z - p.forward.z * dist;
+    if (this.field && !this.field.segmentClear(p.pos.x, p.pos.z, sx, sz)) {
+      for (let a = 0; a < 7; a++) {
+        const ang = Math.random() * Math.PI * 2, dd = dist * 0.85 + Math.random() * 3;
+        const tx = p.pos.x + Math.cos(ang) * dd, tz = p.pos.z + Math.sin(ang) * dd;
+        if (this.field.segmentClear(p.pos.x, p.pos.z, tx, tz)) { sx = tx; sz = tz; break; }
+      }
+    }
+    this.entity.pos.set(sx, 0, sz);
+    Audio.footstep(this.entity.pos, this._wet());   // a step from its new, nearer position
+  }
+  _beginStalk(intensity) {
+    const p = this.player;
+    let sx = p.pos.x - p.forward.x * 13, sz = p.pos.z - p.forward.z * 13;   // from behind, in the dark
+    if (this.field && !this.field.segmentClear(p.pos.x, p.pos.z, sx, sz)) {
+      let found = false;
+      for (let a = 0; a < 7; a++) {
+        const ang = Math.random() * Math.PI * 2, dd = 10 + Math.random() * 4;
+        const tx = p.pos.x + Math.cos(ang) * dd, tz = p.pos.z + Math.sin(ang) * dd;
+        if (this.field.segmentClear(p.pos.x, p.pos.z, tx, tz)) { sx = tx; sz = tz; found = true; break; }
+      }
+      if (!found) { this._huntTimer = 4; return; }    // nowhere clear — try again soon
+    }
+    this.entity.spawnAt(sx, sz, p.pos.x, p.pos.z, 'chase', {
+      speed: 1.4 + intensity * 0.8, wet: this._wet(), onReach: () => this._caughtByHunter(),
+    });
+    this._hunting = true; this._huntLost = 0;
+    this._huntLastD = Math.hypot(sx - p.pos.x, sz - p.pos.z); this._huntStuckT = 0; this._huntSoundT = 1.6;
+    Audio.hush(0.7);                          // a beat of silence — then you hear it move
+    Audio.distantScream(this._near(22, 2));   // something woke up, somewhere back there
+  }
+  _endHunt() {
+    if (this.entity.isVisible && this.entity.mode === 'chase') this.entity.despawn(Audio, true);
+    this._hunting = false; this._huntLost = 0;
+    const intensity = this._huntIntensity() || 0.4;
+    this._huntTimer = (20 - intensity * 11) + Math.random() * (16 - intensity * 9);   // cooldown, shorter when deeper
+  }
+  // IT HAS YOU. Not a death — a violation, then it throws you down and recedes,
+  // and your light is gone for a moment in the dark where it just was.
+  _caughtByHunter() {
+    if (this.ended) { this._hunting = false; return; }
+    const p = this.player, post = this.ctx.post, ui = this.ctx.ui;
+    this._hunting = false;
+    this.stinger('shriekHard');
+    // the screen is its face, right on you
+    this.entity.spawnAt(p.pos.x - p.forward.x * 0.85, p.pos.z - p.forward.z * 0.85, p.pos.x, p.pos.z, 'guard', { dwell: 9 });
+    post.set('dread', 1); post.set('tunnel', 1); post.set('desat', 0.7); post.set('aberration', 0.03);
+    p.addShake(1.9); p.frozen = true;
+    Audio.setMuffle(380, 0.08); Audio.bumpHeart(1, 152); Audio.bumpBreath?.(1);
+    ui.buzz([120, 60, 220]);
+    this._after(() => { if (!this.ended) { ui.blink(160, 520); Audio.stinger('growl'); p.addShake(1.2); } }, 300);
+    this._after(() => {
+      if (this.ended) return;
+      this.entity.hardHide();
+      p.frozen = false;
+      p.flashOn = false;                  // thrown down in the dark — the torch is gone for a beat (watchdog brings it back)
+      post.set('dread', 0.35); post.set('tunnel', 0.25); post.set('desat', 0.35); post.set('aberration', 0.0015);
+      Audio.setMuffle(20000, 1.8);
+      this._endHunt();
+      this._huntTimer += 9;               // a longer reprieve after it's had you
+    }, 1450);
+  }
+
   // ---- scripted beats ------------------------------------------------------
   // One call lands a full jump-scare: audio stinger, white flash, post pulse,
   // camera shake, a heartbeat punch, and a haptic buzz on mobile.
@@ -523,6 +656,7 @@ export class Director {
     this.ctx.post.set('desat', 0.18 + t * 0.18);
     this.ctx.post.set('dread', Math.min(0.42, t * 0.34));
 
+    this._updateHunt(dt);     // a stalking predator overrides the ambient dread
     this._updateSentinel();   // overrides dread/tunnel/speed when a guardian is up
   }
 
@@ -576,6 +710,10 @@ export class Director {
   // off with a real scare only if the loud cooldown allows; otherwise it
   // collapses into silence. So you're always braced, rarely actually hit.
   _updateDread(dt) {
+    // While a predator is actively hunting you, the ambient spook scheduler goes
+    // quiet — the hunt IS the dread, and random pops on top of it would only
+    // dilute it. The held quiet between hunts is what makes the next one land.
+    if (this._hunting) { this.dreadTimer = Math.max(this.dreadTimer, 2.0); return; }
     if (this._nowS() < this.quietUntil) {
       this.dreadTimer = Math.max(this.dreadTimer, 1.0);
       return;
@@ -583,7 +721,9 @@ export class Director {
     this.dreadTimer -= dt;
     if (this.dreadTimer > 0) return;
     const t = Audio.tension;
-    this.dreadTimer = (7.0 + Math.random() * 8) - t * 3.2;        // tenser => a touch more often
+    // Beats are RARER now — long stretches of quiet unease, so each cue carries
+    // weight instead of becoming wallpaper you tune out.
+    this.dreadTimer = (11.0 + Math.random() * 11) - t * 3.2;
 
     const sinceLoud = this._nowS() - this.lastLoud;
     if (Math.random() < 0.76 || sinceLoud < this.LOUD_GAP * 0.5) this._softBeat(t);

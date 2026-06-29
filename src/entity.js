@@ -238,6 +238,7 @@ export class Entity {
     this.crawlMove = opts.crawl === true || mode === 'chase' || (mode === 'cross' && this.speed > 5.0);
     this.hold = opts.hold === true;     // a starer that vanishes when you look away, not when you look at it
     this._seen = false;
+    this._wetStep = opts.wet !== false; // footstep surface for chase/hunt
     this.target.copy(this.pos);
     if (opts.target) this.target.set(opts.target.x, 0, opts.target.z);
     this.onReach = opts.onReach ?? null;
@@ -362,9 +363,12 @@ export class Entity {
       let nz = this.pos.z + (dz / (dist || 1)) * this.speed * dt;
       if (field) { const r = field.resolve(nx, nz, 0.3); nx = r.x; nz = r.z; }
       this.pos.set(nx, 0, nz);
-      this._stride(dt, 3.2, true);
+      this._stride(dt, this.speed > 2.6 ? 3.2 : 1.7, true);
+      // footstep cadence tracks how fast it's moving — a slow stalk plods, a
+      // committed chase pounds. This is the sound that tells you it's coming.
       this._stepT += dt;
-      if (this._stepT >= 0.3) { this._stepT -= 0.3; audio && audio.footstep(this.pos, true); }
+      const stepGap = THREE.MathUtils.clamp(0.62 - this.speed * 0.06, 0.2, 0.6);
+      if (this._stepT >= stepGap) { this._stepT -= stepGap; audio && audio.footstep(this.pos, this._wetStep); }
       if (dist < 1.0 && this.onReach) { this.onReach(); this.hardHide(); }   // hard-cut behind the caught-blink
     } else if (this.mode === 'guard') {
       this.faceToward(player.pos.x, player.pos.z);
