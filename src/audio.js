@@ -853,8 +853,15 @@ export const Audio = (() => {
     heart.spike = Math.max(heart.spike, intensity);
     if (rate) heart.rate = Math.max(heart.rate, rate);
   }
-  // a scare or a hiding beat makes the breath catch and quicken
-  function bumpBreath(amount = 0.5) { breath.stress = Math.min(1, Math.max(breath.stress, amount)); }
+  // a scare or a hiding beat makes the breath catch and quicken — and gasp NOW,
+  // not on the next scheduled inhale (which could be seconds away).
+  function bumpBreath(amount = 0.5) {
+    breath.stress = Math.min(1, Math.max(breath.stress, amount));
+    if (breath.on && ctx) {
+      if (breath.gain) breath.gain.gain.setTargetAtTime(Math.min(0.9, tension * 0.8 + breath.stress), now(), 0.05);
+      breath.next = Math.min(breath.next, now() + 0.03);   // catch your breath immediately
+    }
+  }
 
   // Fade BOTH the dry master and the reverb return — one-shots send straight to
   // the convolver, so fading master alone would let wet/reverb tails leak through.

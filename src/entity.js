@@ -343,7 +343,7 @@ export class Entity {
         this._stride(dt, crawl ? 2.6 : 1.4, crawl);
       }
       if (this.observedTime > this.dwell + dist * 0.04) this.despawn(audio);
-      if (dist < 1.1 && this.onReach) { this.onReach(); this.despawn(audio, true); }
+      if (dist < 1.1 && this.onReach) { this.onReach(); this.hardHide(); }   // violent catch — hard-cut behind the blink, not a slow fold
     } else if (this.mode === 'cross') {
       const tx = this.target.x - this.pos.x, tz = this.target.z - this.pos.z;
       const td = Math.hypot(tx, tz);
@@ -363,7 +363,7 @@ export class Entity {
       this._stride(dt, 3.2, true);
       this._stepT += dt;
       if (this._stepT >= 0.3) { this._stepT -= 0.3; audio && audio.footstep(this.pos, true); }
-      if (dist < 1.0 && this.onReach) { this.onReach(); this.despawn(audio, true); }
+      if (dist < 1.0 && this.onReach) { this.onReach(); this.hardHide(); }   // hard-cut behind the caught-blink
     } else if (this.mode === 'guard') {
       this.faceToward(player.pos.x, player.pos.z);
     }
@@ -374,8 +374,10 @@ export class Entity {
     const ag = THREE.MathUtils.clamp(aggro, 0, 1);
     const crawlK = crawl ? 1 : 0;
     // a guarding Presence LOOMS: it rises and swells the closer you come, so
-    // walking up to the thing it's guarding means it grows over you.
-    const guardLoom = this.mode === 'guard' ? THREE.MathUtils.clamp(1 - dist / 8, 0, 1) : 0;
+    // walking up to the thing it's guarding means it grows over you. Uses the
+    // SAME curve as the Director's dread ramp (1-(d-1)/7) so the visual swell and
+    // the audio/post dread peak together.
+    const guardLoom = this.mode === 'guard' ? THREE.MathUtils.clamp(1 - (dist - 1.0) / 7, 0, 1) : 0;
     this.group.scale.set(
       1 + crawlK * 0.08 + guardLoom * 0.16,
       1 - crawlK * 0.16 + guardLoom * 0.40,
@@ -396,7 +398,7 @@ export class Entity {
       this._twitch.set((Math.random() - 0.5) * (0.3 + ag * 0.5), (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.4);
     }
     const tw = this._twitch, sw = 1 - Math.min(1, (this._twitchUntil - this.phase) * 4);
-    const lean = this.mode === 'guard' ? -Math.max(0, 1 - dist / 8) * 0.72 : 0;   // bows its broken head down at you as you near
+    const lean = this.mode === 'guard' ? -THREE.MathUtils.clamp(1 - (dist - 1.0) / 7, 0, 1) * 0.72 : 0;   // bows its broken head down at you as you near
     this.head.rotation.x = lean - crawlK * 0.38 + tw.x * sw + Math.sin(this.phase * 9) * (0.02 + crawlK * 0.035);
     this.head.rotation.y = tw.y * sw;
     this.head.rotation.z = crawlK * 0.32 + tw.z * sw + Math.sin(this.phase * 6.1) * (0.03 + crawlK * 0.08);

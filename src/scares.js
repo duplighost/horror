@@ -118,7 +118,10 @@ export class Director {
     this.entity.spawnAt(bx, bz, p.pos.x, p.pos.z, 'idle', { dwell: 0.55, hold: true });
     Audio.bumpBreath?.(0.6);
     Audio.bumpHeart(0.4, 92);
-    Audio.whisper(new THREE.Vector3(bx, 1.55, bz));   // breath at your neck
+    // breath at your neck, nudged off to one side (the right vector) so it's not
+    // dead-centre — a directional cue that pulls you to turn toward it.
+    const side = Math.random() < 0.5 ? -1 : 1;
+    Audio.whisper(new THREE.Vector3(bx + (-f.z) * 0.6 * side, 1.55, bz + (f.x) * 0.6 * side));
   }
   witness(x, z, opts = {}) {
     if (this.entity.isVisible || this.ended) return false;
@@ -282,6 +285,9 @@ export class Director {
   // the key / open the door) and it pays off.
   sentinelAt(x, z, opts = {}) {
     if (this.ended) return;
+    // Take sole ownership of the Presence. A stale witnessState from an earlier
+    // glimpse would otherwise expire and despawn the guardian out from under you.
+    this.witnessState = null;
     this.entity.spawnAt(x, z, this.player.pos.x, this.player.pos.z, 'guard', { dwell: 9999999 });
     this._sentinel = { x, z };
     Audio.hush(0.8);
@@ -295,6 +301,7 @@ export class Director {
       // it was real, and now it's folding away right in your face
       this.entity.despawn(Audio);
     }
+    this.player.speedScale = 1;            // RELEASE the dread-walk on the same beat — you can flee now
     this.ctx.post.set('dread', 0.2);
     this.ctx.post.set('tunnel', 0.0);
   }
@@ -418,13 +425,21 @@ export class Director {
     post.set('dread', 1); post.set('tunnel', 0.96); post.set('desat', 0.6); post.set('aberration', 0.02);
     p.addShake(1.5);
     this._after(() => { if (this._plunging) { ui.blink(110, 320); Audio.stinger('growl'); p.addShake(1.1); } }, 540);
+    // Snap to true black FIRST, so there's no lit gap — the blink's flash reopens
+    // before the handoff, and go()'s slow 850ms fade would otherwise start from a
+    // lit screen. Black it out fast, THEN hand off, so you really go dark.
+    this._after(() => {
+      if (!this._plunging) return;
+      ui.fade.style.transition = 'opacity 200ms ease';
+      ui.fade.style.opacity = '1';
+    }, 980);
     this._after(() => {
       this._plunging = false;
-      this.entity.despawn(Audio, true);
+      this.entity.hardHide();          // hard-cut behind the black, not a slow fold
       Audio.stopCrescendo();
       post.set('dread', 0.2); post.set('tunnel', 0.2); post.set('desat', 0.3); post.set('aberration', 0.0015);
       p.frozen = false; p.speedScale = 1;
-      this.ctx.go(next);                                           // go() runs its own fade from the black we're in
+      this.ctx.go(next);                                           // go() keeps holding the black we're already in
     }, 1180);
   }
 
@@ -466,7 +481,9 @@ export class Director {
 
     this._after(() => {
       p.flashOn = true;
-      this.entity.spawnAt(p.pos.x + Math.sin(p.yaw) * 1.2, p.pos.z + Math.cos(p.yaw) * 1.2, p.pos.x, p.pos.z, 'idle', { dwell: 99 });
+      // IN FRONT (yaw+PI is forward) — your gaze is locked on the eye, so a reveal
+      // behind you would be invisible. It's right there between you and the eye.
+      this.entity.spawnAt(p.pos.x + Math.sin(p.yaw + Math.PI) * 1.2, p.pos.z + Math.cos(p.yaw + Math.PI) * 1.2, p.pos.x, p.pos.z, 'idle', { dwell: 99 });
       this.stinger('growl');
       post.set('aberration', 0.026);
       p.addShake(1.6);
@@ -489,7 +506,10 @@ export class Director {
     this._updateWitness(dt);
     this._updateEphemera(dt);
 
-    if (this.ended) { this.player.flicker = 1; return; }
+    // During the ending OR the basement plunge, a scripted beat OWNS the post FX
+    // and the torch. Bail before the per-frame base writes below, or they stomp
+    // the plunge's dread=1/tunnel=0.96 down to 0.42 every single frame.
+    if (this.ended || this._plunging) { this.player.flicker = 1; return; }
 
     this._updateFearWeight(dt);
     this._updateTorch(dt);
@@ -569,8 +589,18 @@ export class Director {
     if (Math.random() < 0.76 || sinceLoud < this.LOUD_GAP * 0.5) this._softBeat(t);
     else this._buildBeat(t);
 
-    // tension simmers down between beats so it has room to rise again
-    Audio.setTension(Math.max(this.zone === 'forest' ? 0.12 : 0.34, Audio.tension - 0.06));
+    // tension simmers down between beats so it has room to rise again — but it
+    // simmers down to a HIGHER floor the deeper you are, so the back half of the
+    // game is heavier even at rest. The dread genuinely escalates.
+    Audio.setTension(Math.max(this._zoneFloor(), Audio.tension - 0.06));
+  }
+
+  _zoneFloor() {
+    return {
+      forest: 0.12, mansion: 0.24, basement: 0.40,
+      conservatory: 0.34, library: 0.42, nursery: 0.48,
+      bathhouse: 0.54, gallery: 0.58, chapel: 0.66, final: 0.74,
+    }[this.zone] ?? 0.34;
   }
 
   _behind(dist = 3) {

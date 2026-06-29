@@ -171,11 +171,17 @@ export function buildFinal(ctx) {
   ctx.interactables.push({
     object: relic, pos: relicPos.clone(), radius: 1.9, focusable: true, once: true,
     canUse: () => true,
-    onUse: (state, c) => { if (ended) return; ended = true; group.remove(relic); c.director.beginEnding(relicPos.clone(), eye); },
+    onUse: (state, c) => {
+      if (ended) return; ended = true;
+      group.remove(relic);
+      c.director.dismissGuardian('shriekHard');   // the altar guardian folds away AS the ending detonates — one event
+      c.director.beginEnding(relicPos.clone(), eye);
+    },
   });
 
-  // place the guardian over the altar the moment we arrive
-  const guardPos = { x: 0, z: -27 };
+  // the guardian stands right on the altar/relic, so the loom and the eye's
+  // proximity dread climb on the SAME target as you make the final approach.
+  const guardPos = { x: 0, z: -25.6 };
 
   eye.userData.memoryLights = memoryLights;
   eye.userData.endBloom = 0;
@@ -269,6 +275,6 @@ export function buildFinal(ctx) {
     fog: { color: zc.fog, density: zc.fogDensity },
     ambient: { color: zc.ambient, intensity: zc.ambientI },
     sky: zc.sky, update,
-    onEnter: (c) => { c.director.guard(guardPos.x, guardPos.z); },
+    onEnter: (c) => { c.director.sentinelAt(guardPos.x, guardPos.z); },   // a real sentinel so the breath/dread ramp as you cross to the altar
   };
 }
