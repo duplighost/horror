@@ -172,12 +172,17 @@ export function buildMansion(ctx) {
     onUse: (state, c) => {
       bDoor.userData.targetAngle = -Math.PI * 0.62; bDoorBlocker.active = false;
       seam.visible = false; c.audio.doorCreak(bDoor.position);
+      c.director.dismissGuardian('shriekHard');   // it was standing in front of the way down
       setTimeout(() => c.go('basement'), 1400);
     },
   });
-  // a cold draft + far heartbeat as you near the door
-  const [draftX, draftZ] = w(0, 1.6);
-  ctx.triggers.push({ x: draftX, z: draftZ, r: 2.2, once: true, onEnter: (c) => { c.audio.whisper(new THREE.Vector3(doorWx, 1, doorWz)); c.audio.bumpHeart(0.4, 88); } });
+  // a cold draft + far heartbeat as you near the door — and the Presence is
+  // standing in front of it, barring the descent. You have to walk up to it.
+  const [draftX, draftZ] = w(0, 2.2);
+  ctx.triggers.push({ x: draftX, z: draftZ, r: 3.0, once: true, onEnter: (c) => {
+    c.audio.whisper(new THREE.Vector3(doorWx, 1, doorWz)); c.audio.bumpHeart(0.4, 88);
+    c.director.sentinelAt(doorWx, doorWz);
+  } });
 
   // --- furnish rooms & hang portraits on closed walls ---
   const portraits = [];

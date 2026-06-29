@@ -39,6 +39,9 @@ export class Entity {
     this._twitchUntil = 0;
     this._twitch = new THREE.Vector3();
     this._stepT = 0;
+    this.vanishing = false;
+    this._vanishT = 0;
+    this._vanishDur = 0.32;
     this._hasSkittered = false;
     this.crawlMove = false;
   }
@@ -236,6 +239,7 @@ export class Entity {
     this.target.copy(this.pos);
     if (opts.target) this.target.set(opts.target.x, 0, opts.target.z);
     this.onReach = opts.onReach ?? null;
+    this.vanishing = false;
     this.group.visible = true;
     this.group.scale.set(1, 1, 1);
     if (!this.crawlMove) this._stride(0, 1, false);
@@ -247,12 +251,29 @@ export class Entity {
     if (Math.abs(dx) + Math.abs(dz) > 0.0001) this.group.rotation.y = Math.atan2(dx, dz);
   }
 
+  // Smart despawn. If you're LOOKING at it, it must not pop out of existence —
+  // it convulses and folds down into the dark (see the 'vanishing' branch in
+  // update). If you're not looking, hard-hide instantly so it's genuinely "gone
+  // when you look back" — no animation needed, you never saw it leave.
   despawn(audio, silent = false) {
-    if (!this.group.visible) return;
+    if (!this.group.visible || this.vanishing) return;
+    if (this.observedTime > 0.02) {                 // watched — fold away, don't pop
+      this.vanishing = true; this._vanishT = this._vanishDur;
+      if (!silent && this.vanishSound && audio) audio.whisper(this.pos);
+      return;
+    }
+    this._hide();
+    if (!silent && this.vanishSound && audio) audio.whisper(this.pos);
+  }
+  // instant, unconditional — for level unloads / hard resets
+  hardHide() { this._hide(); }
+  _hide() {
     this.group.visible = false;
     this.mode = 'hidden';
     this.crawlMove = false;
-    if (!silent && this.vanishSound && audio) audio.whisper(this.pos);
+    this.vanishing = false;
+    this.group.scale.set(1, 1, 1);
+    this.group.position.copy(this.pos);
   }
 
   get isVisible() { return this.group.visible; }
@@ -272,6 +293,22 @@ export class Entity {
 
   update(dt, player, field, audio) {
     if (!this.group.visible) return;
+
+    // --- folding away: a convulsion, then it's pulled down into the dark ---
+    if (this.vanishing) {
+      this._vanishT -= dt;
+      const k = Math.max(0, this._vanishT / this._vanishDur);   // 1 -> 0
+      this.phase += dt * 3;                                      // animation goes frantic
+      const jit = 0.06 * k + 0.01;
+      this.group.position.set(this.pos.x + (Math.random() - 0.5) * jit, -(1 - k) * 0.7, this.pos.z + (Math.random() - 0.5) * jit);
+      this.group.scale.set(0.55 + k * 0.45, k * k, 0.55 + k * 0.45);   // collapse straight down
+      if (this.head) this.head.rotation.z += (Math.random() - 0.5) * 0.5 * (1 - k);
+      if (this.eyeMat) this.eyeMat.emissiveIntensity *= 0.84;          // the eyes gutter out
+      if (this.jaw) this.jaw.rotation.x += dt * 4 * (1 - k);           // jaw gapes as it goes
+      if (this._vanishT <= 0) this._hide();
+      return;
+    }
+
     this.lifetime += dt;
     this.phase += dt;
 
@@ -336,7 +373,14 @@ export class Entity {
                 : THREE.MathUtils.clamp(1 - dist / 7, 0, 1) + (watched ? 0.3 : 0);
     const ag = THREE.MathUtils.clamp(aggro, 0, 1);
     const crawlK = crawl ? 1 : 0;
-    this.group.scale.set(1 + crawlK * 0.08, 1 - crawlK * 0.16, 1 + crawlK * 0.1);
+    // a guarding Presence LOOMS: it rises and swells the closer you come, so
+    // walking up to the thing it's guarding means it grows over you.
+    const guardLoom = this.mode === 'guard' ? THREE.MathUtils.clamp(1 - dist / 8, 0, 1) : 0;
+    this.group.scale.set(
+      1 + crawlK * 0.08 + guardLoom * 0.16,
+      1 - crawlK * 0.16 + guardLoom * 0.40,
+      1 + crawlK * 0.1 + guardLoom * 0.16,
+    );
     this.torso.position.set(0.02, 1.35 - crawlK * 0.34, crawlK * 0.12);
     this.torso.rotation.x = 0.14 + crawlK * (0.78 + Math.sin(this.phase * 12) * 0.08);
     this.torso.rotation.z = crawlK * Math.sin(this.phase * 7.2) * 0.08;
@@ -352,7 +396,7 @@ export class Entity {
       this._twitch.set((Math.random() - 0.5) * (0.3 + ag * 0.5), (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.4);
     }
     const tw = this._twitch, sw = 1 - Math.min(1, (this._twitchUntil - this.phase) * 4);
-    const lean = this.mode === 'guard' ? -Math.max(0, 1 - dist / 8) * 0.5 : 0;
+    const lean = this.mode === 'guard' ? -Math.max(0, 1 - dist / 8) * 0.72 : 0;   // bows its broken head down at you as you near
     this.head.rotation.x = lean - crawlK * 0.38 + tw.x * sw + Math.sin(this.phase * 9) * (0.02 + crawlK * 0.035);
     this.head.rotation.y = tw.y * sw;
     this.head.rotation.z = crawlK * 0.32 + tw.z * sw + Math.sin(this.phase * 6.1) * (0.03 + crawlK * 0.08);

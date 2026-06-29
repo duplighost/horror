@@ -33,6 +33,7 @@ export class Director {
     this._timers = new Set();     // every scripted-beat setTimeout, so reset() can kill them
     this._halluTok = 0;
     this._plunging = false;
+    this._sentinel = null;        // the threshold guardian standing on your objective
   }
 
   _nowS() { return performance.now() / 1000; }
@@ -60,9 +61,10 @@ export class Director {
   // separately by enterZone() on level load, so it's not forced here.
   reset() {
     this._clearTimers();
-    this.entity.despawn(Audio, true);
+    this.entity.hardHide();
     this.chaseActive = false;
     this._plunging = false;
+    this._sentinel = null;
     this.ended = false;
     this.flickering = false; this.flickT = 0; this.flickerSeed = Math.random() * 20;
     this.dreadTimer = 4 + Math.random() * 4;
@@ -104,6 +106,19 @@ export class Director {
   crossPath(ax, az, bx, bz) {
     if (this.ended) return;
     this.entity.spawnAt(ax, az, bx, bz, 'cross', { speed: 4.7, target: { x: bx, z: bz }, crawl: true });
+  }
+  // It is suddenly standing DIRECTLY BEHIND you. No stinger, no flash — just a
+  // breath at the back of your neck. You only find out if you turn around, and
+  // because it holds, it's right there, looming, when you do.
+  behindYou() {
+    if (this.entity.isVisible || this.ended) return;
+    const p = this.player, f = p.forward;
+    const bx = p.pos.x - f.x * 1.45, bz = p.pos.z - f.z * 1.45;
+    if (this.field && !this.field.segmentClear(p.pos.x, p.pos.z, bx, bz)) return;   // not inside a wall
+    this.entity.spawnAt(bx, bz, p.pos.x, p.pos.z, 'idle', { dwell: 0.55, hold: true });
+    Audio.bumpBreath?.(0.6);
+    Audio.bumpHeart(0.4, 92);
+    Audio.whisper(new THREE.Vector3(bx, 1.55, bz));   // breath at your neck
   }
   witness(x, z, opts = {}) {
     if (this.entity.isVisible || this.ended) return false;
@@ -257,6 +272,45 @@ export class Director {
   }
   guard(x, z) {
     this.entity.spawnAt(x, z, this.player.pos.x, this.player.pos.z, 'guard', { dwell: 99999 });
+  }
+
+  // --- the threshold guardian: the heart of the game's fear ----------------
+  // The Presence stands ON the thing you need (a key, a door, the way down) and
+  // does not move. To progress you have to walk up to it — and it LOOMS larger
+  // and more agitated the nearer you get. You know exactly where to go. Going
+  // there is the hard part. Call dismissGuardian() the instant you commit (grab
+  // the key / open the door) and it pays off.
+  sentinelAt(x, z, opts = {}) {
+    if (this.ended) return;
+    this.entity.spawnAt(x, z, this.player.pos.x, this.player.pos.z, 'guard', { dwell: 9999999 });
+    this._sentinel = { x, z };
+    Audio.hush(0.8);
+    Audio.bumpHeart(0.3, 78);
+  }
+  dismissGuardian(type = 'shriek') {
+    if (!this._sentinel) return;
+    this._sentinel = null;
+    if (this.entity.isVisible && this.entity.mode === 'guard') {
+      this.stinger(type);
+      // it was real, and now it's folding away right in your face
+      this.entity.despawn(Audio);
+    }
+    this.ctx.post.set('dread', 0.2);
+    this.ctx.post.set('tunnel', 0.0);
+  }
+  // per-frame: dread, heart and breath climb as you near the guardian — the
+  // approach should get physically harder to make.
+  _updateSentinel() {
+    if (!this._sentinel || !this.entity.isVisible) return;
+    const p = this.player.pos;
+    const d = Math.hypot(p.x - this._sentinel.x, p.z - this._sentinel.z);
+    const near = THREE.MathUtils.clamp(1 - (d - 1.0) / 7, 0, 1);
+    this.ctx.post.set('dread', Math.max(this.ctx.post.target.dread || 0, near * 0.8));
+    this.ctx.post.set('tunnel', Math.pow(near, 1.6) * 0.55);
+    Audio.setTension(Math.max(Audio.tension, 0.5 + near * 0.5));
+    Audio.bumpBreath?.(near * 0.7);
+    if (near > 0.25) this.player.addShake(near * 0.045);
+    this.player.speedScale = Math.min(this.player.speedScale, 1 - near * 0.4);   // dread-walk into it
   }
 
   // ---- scripted beats ------------------------------------------------------
@@ -448,6 +502,8 @@ export class Director {
     this.ctx.post.set('vignette', 0.92 + t * 0.16);
     this.ctx.post.set('desat', 0.18 + t * 0.18);
     this.ctx.post.set('dread', Math.min(0.42, t * 0.34));
+
+    this._updateSentinel();   // overrides dread/tunnel/speed when a guardian is up
   }
 
   // ---- the failing torch (mostly cosmetic; an occasional longer stutter) ----
@@ -618,6 +674,7 @@ export class Director {
       [2.2 + t * 3.6, () => this.darkEyes()],
       [1.1 + t * 2.0, () => this.shadowFold()],
       [0.7 + t * 1.4, () => { if (t > 0.3 && !this.entity.isVisible) this.peripheral(); }],
+      [0.5 + t * 1.9, () => { if (t > 0.4 && !this.entity.isVisible) this.behindYou(); }],   // it's right behind you
       [1.1 + t * 2.6, () => { if (t > 0.24) this._sightlineWitness({ intensity: 0.35 + t * 0.35 }); }],
       [0.9 + t * 2.0, () => this._wallHit()],
       [0.5 + t * 1.6, () => this._falseBlink()],

@@ -1357,6 +1357,13 @@ function addMazeAndExit(group, field, flames, animated, spec, rand, ctx, materia
   addGuidance(group, flames, path, cols, spec.guidance, THREE.MathUtils.clamp((spec.index - 4) / 5, 0, 1));
   addPathTrail(group, path, cols, spec);
 
+  // The threshold guardian stands on EITHER the key or the door (alternating, so
+  // it's never the same beat two wings running). You can see your objective — the
+  // Presence is standing on it, looming larger the nearer you come — and you have
+  // to walk up to it anyway.
+  const guardKey = spec.index % 2 === 0;
+  const guardType = ['shriek', 'shriekHard', 'growl'][spec.index % 3];
+
   const key = makeKey(spec.keyTone);
   const kx = wx(exitCell.x, cols), kz = wz(exitCell.y);
   key.position.set(kx, 0.92, kz);
@@ -1373,7 +1380,8 @@ function addMazeAndExit(group, field, flames, animated, spec, rand, ctx, materia
     onUse: (state, c) => {
       group.remove(key);
       state.inventory.add(spec.key);
-      c.director.pickupScare(new THREE.Vector3(kx, 1, kz));
+      if (guardKey) c.director.dismissGuardian(guardType);   // it was standing right here
+      else c.director.pickupScare(new THREE.Vector3(kx, 1, kz));
       c.audio.setTension(Math.min(1, 0.62 + spec.index * 0.035));
     },
   });
@@ -1440,10 +1448,16 @@ function addMazeAndExit(group, field, flames, animated, spec, rand, ctx, materia
       blocker.active = false;
       door.userData.targetAngle = -Math.PI * 0.55;
       c.audio.doorCreak(new THREE.Vector3(doorX, 1, doorZ));
+      if (!guardKey) c.director.dismissGuardian(guardType);   // it was barring the door
       c.ui.blink(90, 420);
       setTimeout(() => c.go(spec.next), 360);
     },
   });
+
+  // raise the guardian as you close on its post (the key, or the door it bars)
+  const gx = guardKey ? kx : doorX - dx * 0.7;
+  const gz = guardKey ? kz : doorZ - dz * 0.7;
+  ctx.triggers.push({ x: gx, z: gz, r: 4.3, once: true, onEnter: (c) => { c.director.sentinelAt(gx, gz); } });
 
   return { key, door, exit, exitCell, cols, rows, crawlZones: traversal.crawlZones, nextAmbientAt: 0 };
 }
