@@ -32,6 +32,7 @@ export class Director {
     this.zone = 'forest';         // the level you are ACTUALLY in (set on load)
     this._timers = new Set();     // every scripted-beat setTimeout, so reset() can kill them
     this._halluTok = 0;
+    this._plunging = false;
   }
 
   _nowS() { return performance.now() / 1000; }
@@ -61,6 +62,7 @@ export class Director {
     this._clearTimers();
     this.entity.despawn(Audio, true);
     this.chaseActive = false;
+    this._plunging = false;
     this.ended = false;
     this.flickering = false; this.flickT = 0; this.flickerSeed = Math.random() * 20;
     this.dreadTimer = 4 + Math.random() * 4;
@@ -218,6 +220,10 @@ export class Director {
     return true;
   }
 
+  // The mirror. Your reflection is wrong: the Presence stands in the glass where
+  // you should be, facing you, three eyes lit. It holds — and it's gone the
+  // instant you turn to look straight at it. (If the Presence is busy elsewhere,
+  // fall back to the eyes-in-the-glass flash.)
   mirrorScare(pos = null) {
     if (this.ended) return false;
     const spot = pos?.isVector3 ? pos.clone() : this._eyeSpot({ dist: 4.5, off: 0 });
@@ -227,7 +233,13 @@ export class Director {
     Audio.bumpHeart(0.65, 98);
     this.player.addShake(0.24);
     this.ctx.post.kick('pulse', REDUCED_MOTION ? 0.12 : 0.35);
-    this.darkEyes(spot, { force: true, life: 1.15, scale: 1.18, count: 3, sound: false, shadowOpacity: 0.78, eyeGap: 0.15 });
+    if (!this.entity.isVisible) {
+      // the real Presence stands in the glass, staring back out of it
+      this.entity.spawnAt(spot.x, spot.z, this.player.pos.x, this.player.pos.z, 'idle', { dwell: 0.34, hold: true });
+      this.witnessState = { expires: this._nowS() + 3.4, armed: false, intensity: 0.62, hush: false };
+    } else {
+      this.darkEyes(spot, { force: true, life: 1.15, scale: 1.18, count: 3, sound: false, shadowOpacity: 0.78, eyeGap: 0.15 });
+    }
     this._after(() => {
       if (this.ended) return;
       this.ctx.ui.blink(55, 220);
@@ -259,6 +271,7 @@ export class Director {
     this.ctx.post.kick('pulse', REDUCED_MOTION ? 0.2 : 0.7);
     this.player.addShake(hard ? 1.2 : 0.7);
     Audio.bumpHeart(1, 110);
+    Audio.bumpBreath?.(hard ? 0.95 : 0.7);    // the breath catches and quickens
     this.ctx.ui.buzz(hard ? [70, 50, 140] : (type === 'breath' ? 30 : 60));
   }
 
@@ -315,6 +328,7 @@ export class Director {
     this.entity.despawn(Audio, true);
     this.ctx.post.set('aberration', 0.0015);
     Audio.setTension(0.55);
+    Audio.duck(1.0, 0.6);   // startChase ducked the ambient bed — restore it
   }
   caught() {
     // not a death — a violent blink, then the Presence is flung back a few
@@ -329,6 +343,35 @@ export class Director {
       const p = this.player, a = p.yaw;          // behind the player, in the maze
       this.entity.spawnAt(p.pos.x + Math.sin(a) * 7, p.pos.z + Math.cos(a) * 7, p.pos.x, p.pos.z, 'chase', { speed: 3.4, onReach: () => this.caught() });
     }, 250);
+  }
+
+  // A level-end PLUNGE: you flee the chase into the glowing doorway expecting
+  // escape — and the Presence is already there, filling it. Shriek, lunge,
+  // tunnel-crush, black. You didn't get out. You went deeper. (Used at the end
+  // of the basement, which once dropped you straight at the eye.)
+  plungeInto(next) {
+    if (this.ended || this._plunging) return;
+    this._plunging = true;
+    this.stopChase();
+    const p = this.player, post = this.ctx.post, ui = this.ctx.ui;
+    p.frozen = true; p.speedScale = 0.12;
+    const fwd = p.yaw + Math.PI;                                   // the doorway you're walking INTO
+    // it fills the doorway, leaning into you, eyes up
+    this.entity.spawnAt(p.pos.x + Math.sin(fwd) * 1.55, p.pos.z + Math.cos(fwd) * 1.55, p.pos.x, p.pos.z, 'guard', { dwell: 999 });
+    this.stinger('shriekHard');
+    Audio.bumpHeart(1, 142);
+    Audio.crescendo(2.4);
+    post.set('dread', 1); post.set('tunnel', 0.96); post.set('desat', 0.6); post.set('aberration', 0.02);
+    p.addShake(1.5);
+    this._after(() => { if (this._plunging) { ui.blink(110, 320); Audio.stinger('growl'); p.addShake(1.1); } }, 540);
+    this._after(() => {
+      this._plunging = false;
+      this.entity.despawn(Audio, true);
+      Audio.stopCrescendo();
+      post.set('dread', 0.2); post.set('tunnel', 0.2); post.set('desat', 0.3); post.set('aberration', 0.0015);
+      p.frozen = false; p.speedScale = 1;
+      this.ctx.go(next);                                           // go() runs its own fade from the black we're in
+    }, 1180);
   }
 
   // ---- the ending ----------------------------------------------------------

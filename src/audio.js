@@ -11,6 +11,13 @@ export const Audio = (() => {
   let master, comp, muffle, revGain, dry, conv;
   let started = false, unlocked = false;
   let noiseBuf = null;
+  let _resumeHooked = false, _resumeCheck = 0;
+
+  // Browsers SUSPEND an AudioContext whenever the page is hidden (tab switch,
+  // mobile screen-lock, app-switch). Nothing un-suspends it on its own, so the
+  // whole soundtrack just dies and never comes back — which reads as "the sound
+  // stopped working." Claw it back at every opportunity.
+  function _resume() { if (ctx && ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} } }
 
   // live beds we keep references to
   const bed = { osc: [], gain: null, lp: null, lfo: [], sub: null, subGain: null, dissGain: null };
@@ -20,6 +27,10 @@ export const Audio = (() => {
   // transient loudness kick from scares that decays over ~1s; the steady level
   // comes from tension. Both can jump up sharply but always settle back down.
   let heart = { gain: null, on: false, next: 0, rate: 60, spike: 0 };
+  // The player's own breathing. Silent when calm; quickens and turns ragged and
+  // CLOSE as dread rises — the body's panic you can hear. `stress` is an extra
+  // push (cowering in the dark, a fresh scare) on top of tension.
+  let breath = { gain: null, on: false, next: 0, stress: 0 };
   let tension = 0, targetTension = 0;
   let zone = 'forest';
 
@@ -92,6 +103,18 @@ export const Audio = (() => {
     muffle.connect(comp);
     muffle.connect(conv); conv.connect(revGain); revGain.connect(comp);
     comp.connect(ctx.destination);
+
+    // Resume the moment the page is interacted with or comes back into view, and
+    // whenever the context reports it slipped to suspended.
+    if (!_resumeHooked) {
+      _resumeHooked = true;
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) _resume(); });
+      window.addEventListener('focus', _resume);
+      window.addEventListener('pointerdown', _resume, true);
+      window.addEventListener('keydown', _resume, true);
+      window.addEventListener('touchstart', _resume, true);
+      ctx.addEventListener('statechange', _resume);
+    }
   }
 
   // route a node to master (dry) — reverb is taken globally off the muffle bus
@@ -113,44 +136,82 @@ export const Audio = (() => {
     return { in: g, out: g };
   }
 
+  // Per-zone voicing for the drone bed. The descent drops in pitch and shifts
+  // toward darker intervals so the soundtrack EVOLVES instead of droning the same
+  // 55 Hz mud the whole game (which is what makes it "stop being scary"). root =
+  // base Hz; ivals = the two upper voices over it; diss = the dread pair that
+  // swells with tension; sub = the floor; color = lowpass corner (mud control).
+  const BED_VOICE = {
+    forest:       { root: 55,   ivals: [1.5, 2.0],   diss: [1.06, 1.50], sub: 33, color: 360 }, // open fifth, airy
+    mansion:      { root: 49,   ivals: [1.19, 1.5],  diss: [1.06, 1.50], sub: 31, color: 330 }, // a minor third creeps in
+    basement:     { root: 41,   ivals: [1.06, 1.5],  diss: [1.06, 1.41], sub: 28, color: 280 }, // lower, grinding
+    conservatory: { root: 52,   ivals: [1.5, 2.02],  diss: [1.02, 1.50], sub: 30, color: 380 }, // glassy, detuned octave
+    library:      { root: 46,   ivals: [1.33, 1.78], diss: [1.06, 1.33], sub: 29, color: 320 }, // hollow fourths
+    nursery:      { root: 44,   ivals: [1.2, 2.4],   diss: [1.12, 1.50], sub: 27, color: 340 }, // a sick lullaby + high ghost
+    bathhouse:    { root: 39,   ivals: [1.41, 1.5],  diss: [1.06, 1.41], sub: 26, color: 260 }, // tritone, wet
+    gallery:      { root: 43,   ivals: [1.25, 1.6],  diss: [1.06, 1.50], sub: 28, color: 320 },
+    chapel:       { root: 36,   ivals: [1.06, 1.41], diss: [1.06, 1.41], sub: 24, color: 230 }, // low, oppressive
+    final:        { root: 32,   ivals: [1.06, 1.5],  diss: [1.06, 1.50], sub: 22, color: 210 }, // subterranean
+  };
+
+  function applyVoice(z, glide = 3) {
+    const v = BED_VOICE[z] || BED_VOICE.forest;
+    const t = now();
+    const set = (param, val) => { try { param.cancelScheduledValues(t); param.setTargetAtTime(val, t, glide); } catch (e) {} };
+    if (bed.rootOsc) {
+      set(bed.rootOsc[0].frequency, v.root);
+      set(bed.rootOsc[1].frequency, v.root * v.ivals[0]);
+      set(bed.rootOsc[2].frequency, v.root * v.ivals[1]);
+    }
+    if (bed.dissOsc) {
+      set(bed.dissOsc[0].frequency, v.root * v.diss[0]);
+      set(bed.dissOsc[1].frequency, v.root * v.diss[1]);
+    }
+    if (bed.sub) set(bed.sub.frequency, v.sub);
+    bed.color = v.color;
+  }
+
   // ---- ambient bed ---------------------------------------------------------
   function startBed() {
     bed.gain = ctx.createGain(); bed.gain.gain.value = 0.0;
     bed.lp = ctx.createBiquadFilter(); bed.lp.type = 'lowpass';
-    bed.lp.frequency.value = 320; bed.lp.Q.value = 0.7;
+    bed.lp.frequency.value = 360; bed.lp.Q.value = 0.7;
     bed.gain.connect(bed.lp); out(bed.lp);
+    bed.color = 360;
 
-    // root drone cluster (low D-ish), with detune unease
-    const roots = [55, 55 * 1.5, 55 * 2.0]; // root, fifth, octave
-    roots.forEach((f, i) => {
+    // root drone cluster — kept a touch leaner than before so calm isn't mud
+    bed.rootOsc = [];
+    const v0 = BED_VOICE.forest;
+    [v0.root, v0.root * v0.ivals[0], v0.root * v0.ivals[1]].forEach((f, i) => {
       const o = ctx.createOscillator(); o.type = i === 2 ? 'triangle' : 'sawtooth';
       o.frequency.value = f;
-      const g = ctx.createGain(); g.gain.value = i === 0 ? 0.18 : 0.09;
+      const g = ctx.createGain(); g.gain.value = i === 0 ? 0.15 : 0.075;
       o.connect(g); g.connect(bed.gain);
-      // slow detune LFO
       const lfo = ctx.createOscillator(); lfo.type = 'sine';
       lfo.frequency.value = 0.05 + i * 0.017;
       const la = ctx.createGain(); la.gain.value = 3 + i * 2;
       lfo.connect(la); la.connect(o.detune);
       o.start(); lfo.start();
-      bed.osc.push(o); bed.lfo.push(lfo);
+      bed.osc.push(o); bed.lfo.push(lfo); bed.rootOsc.push(o);
     });
 
-    // dissonant minor-second cluster that swells in at high tension
+    // dissonant cluster that swells in at high tension
     bed.dissGain = ctx.createGain(); bed.dissGain.gain.value = 0.0;
     bed.dissGain.connect(bed.gain);
-    [55 * 1.06, 55 * 1.41].forEach((f) => {        // ~minor 2nd & tritone, the dread interval
+    bed.dissOsc = [];
+    [v0.root * v0.diss[0], v0.root * v0.diss[1]].forEach((f) => {
       const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
       const g = ctx.createGain(); g.gain.value = 0.06; o.connect(g); g.connect(bed.dissGain);
-      o.start(); bed.osc.push(o);
+      o.start(); bed.osc.push(o); bed.dissOsc.push(o);
     });
 
     // sub rumble floor
     bed.subGain = ctx.createGain(); bed.subGain.gain.value = 0.0; out(bed.subGain);
-    bed.sub = ctx.createOscillator(); bed.sub.type = 'sine'; bed.sub.frequency.value = 33;
+    bed.sub = ctx.createOscillator(); bed.sub.type = 'sine'; bed.sub.frequency.value = v0.sub;
     bed.sub.connect(bed.subGain); bed.sub.start();
 
-    bed.gain.gain.linearRampToValueAtTime(0.5, now() + 6);
+    bed.base = 0.38;                                  // leaner resting level — calm has room to breathe
+    bed.gain.gain.linearRampToValueAtTime(bed.base, now() + 6);
   }
 
   function startWind() {
@@ -199,6 +260,43 @@ export const Audio = (() => {
       thump(beatT + 0.22, 40, gain * 0.7, 0.16); // dub
       const interval = 60 / Math.max(40, heart.rate);
       heart.next = beatT + interval;
+    }
+  }
+
+  function startBreath() {
+    breath.gain = ctx.createGain(); breath.gain.gain.value = 0.0;
+    // DRY and close — bypass the reverb send so it stays intimate (your breath in
+    // your own ears), never a washy tail adding to the mud. It's driven to 0 by
+    // tension/stress so it doesn't need the master fade.
+    breath.gain.connect(comp);
+    breath.on = true; breath.next = now() + 1.5;
+  }
+  // one inhale (rising, sharp) + a softer exhale, of filtered noise. level 0..1.
+  function breathOnce(t, level) {
+    const mk = (start, dur, f0, f1, vol, q) => {
+      const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = q;
+      bp.frequency.setValueAtTime(f0, start); bp.frequency.linearRampToValueAtTime(f1, start + dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.linearRampToValueAtTime(vol, start + dur * 0.4);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+      src.connect(bp); bp.connect(g); g.connect(breath.gain);
+      src.start(start); src.stop(start + dur + 0.05);
+    };
+    const vol = 0.06 + level * 0.5;
+    mk(t, 0.40, 540, 980 + level * 700, vol, 1.0 + level * 1.6);          // inhale
+    mk(t + 0.48 + (1 - level) * 0.18, 0.52, 420, 300, vol * 0.55, 0.9);   // exhale
+  }
+  function scheduleBreath() {
+    if (!breath.on) return;
+    const t = now();
+    while (breath.next < t + 0.3) {
+      const bt = Math.max(breath.next, t + 0.02);
+      const level = Math.min(1, tension * 0.8 + breath.stress);
+      if (level > 0.12) breathOnce(bt, level);        // calm = no breath at all
+      const rate = 12 + level * 17;                    // 12/min calm -> ~29/min terrified
+      breath.next = bt + 60 / rate;
     }
   }
 
@@ -648,7 +746,7 @@ export const Audio = (() => {
     if (!ctx) return;
     if (!bed.gain) return;
     bed.gain.gain.cancelScheduledValues(now());
-    bed.gain.gain.setTargetAtTime(0.5 * amount, now(), time / 3);
+    bed.gain.gain.setTargetAtTime((bed.base ?? 0.38) * amount, now(), time / 3);
   }
   function setMuffle(freq, time = 0.3) {
     if (!ctx) return;
@@ -664,23 +762,30 @@ export const Audio = (() => {
     if (wind.gain) wind.gain.gain.setTargetAtTime(0.0, now(), 0.15);
     setTimeout(() => {
       if (!ctx) return;
-      if (bed.gain) bed.gain.gain.setTargetAtTime(0.5, now(), 0.6);
-      if (wind.gain) wind.gain.gain.setTargetAtTime(zone === 'forest' ? 0.1 : 0.02, now(), 0.9);
+      if (bed.gain) bed.gain.gain.setTargetAtTime(bed.base ?? 0.38, now(), 0.6);
+      if (wind.gain) wind.gain.gain.setTargetAtTime(zone === 'forest' || zone === 'conservatory' ? 0.1 : 0.02, now(), 0.9);
     }, dur * 1000);
   }
 
   // ---- frame update --------------------------------------------------------
   function update(dt, lp, forward) {
     if (!started) return;
+    // rAF is paused while the tab is hidden, so this runs again the instant we
+    // return to view — the natural place to revive a suspended context.
+    _resumeCheck -= dt;
+    if (_resumeCheck <= 0) { _resumeCheck = 0.5; if (ctx && ctx.state !== 'running') _resume(); }
     if (lp) { listener.x = lp.x; listener.y = lp.y; listener.z = lp.z; }
     if (forward) { listener.fx = forward.x; listener.fz = forward.z; }
 
     tension += (targetTension - tension) * Math.min(1, dt * 1.5);
 
-    // bed responds to tension: brighter, more dissonant, more sub
-    if (bed.lp) bed.lp.frequency.setTargetAtTime(280 + tension * 1400, now(), 0.3);
-    if (bed.dissGain) bed.dissGain.gain.setTargetAtTime(tension * tension * 0.9, now(), 0.4);
-    if (bed.subGain) bed.subGain.gain.setTargetAtTime(0.12 + tension * 0.5, now(), 0.4);
+    // bed responds to tension: brighter, more dissonant, more sub. The lowpass
+    // sits at the zone's "color" when calm (dark = less mud) and opens with
+    // dread. Sub is leaner now so the low end doesn't pile into mud.
+    const color = bed.color || 320;
+    if (bed.lp) bed.lp.frequency.setTargetAtTime(color + tension * tension * 1500, now(), 0.3);
+    if (bed.dissGain) bed.dissGain.gain.setTargetAtTime(tension * tension * 0.95, now(), 0.4);
+    if (bed.subGain) bed.subGain.gain.setTargetAtTime(0.06 + tension * 0.42, now(), 0.4);
     if (wind.bp) {
       const outside = zone === 'forest' || zone === 'conservatory';
       wind.bp.frequency.setTargetAtTime((outside ? 420 : 190) + tension * (outside ? 620 : 360), now(), 0.9);
@@ -694,6 +799,14 @@ export const Audio = (() => {
       heart.rate += (restingRate - heart.rate) * Math.min(1, dt * 0.8);
       heart.spike = Math.max(0, heart.spike - dt * 1.1);
       scheduleHeart();
+    }
+    // breathing layer: presence scales with dread, individual breaths gated in
+    // scheduleBreath so calm is genuinely silent. stress decays on its own.
+    if (breath.on) {
+      breath.stress = Math.max(0, breath.stress - dt * 0.5);
+      const target = Math.min(0.9, tension * 0.8 + breath.stress);
+      breath.gain.gain.setTargetAtTime(target, now(), 0.4);
+      scheduleBreath();
     }
   }
 
@@ -714,7 +827,7 @@ export const Audio = (() => {
     init(); unlock();
     if (!ctx) return;            // audio unavailable (e.g. headless) — degrade silently
     if (started) return; started = true;
-    startBed(); startWind(); startHeart();
+    startBed(); startWind(); startHeart(); startBreath();
     master.gain.setValueAtTime(0.0001, now());
     master.gain.linearRampToValueAtTime(0.9, now() + 4);
   }
@@ -723,11 +836,13 @@ export const Audio = (() => {
     if (!ctx) return;
     zone = z;
     if (!started) return;
-    // wind only outside; reverb longer & wetter as we descend
+    applyVoice(z);                         // re-pitch the drone for this wing — the soundtrack descends with you
+    // wind only outside; reverb longer & wetter as we descend (but pulled back a
+    // little so the wet tail doesn't smear the drone into mud)
     const outside = z === 'forest' || z === 'conservatory';
     const wet = z === 'basement' || z === 'bathhouse' || z === 'chapel' || z === 'final';
     if (wind.gain) wind.gain.gain.setTargetAtTime(outside ? 0.1 : 0.02, now(), 1.5);
-    revGain.gain.setTargetAtTime(wet ? 1.2 : z === 'mansion' || z === 'library' || z === 'gallery' ? 1.0 : 0.75, now(), 2);
+    revGain.gain.setTargetAtTime(wet ? 0.95 : z === 'mansion' || z === 'library' || z === 'gallery' ? 0.8 : 0.62, now(), 2);
   }
 
   function setTension(v) { targetTension = Math.max(0, Math.min(1, v)); }
@@ -738,6 +853,8 @@ export const Audio = (() => {
     heart.spike = Math.max(heart.spike, intensity);
     if (rate) heart.rate = Math.max(heart.rate, rate);
   }
+  // a scare or a hiding beat makes the breath catch and quicken
+  function bumpBreath(amount = 0.5) { breath.stress = Math.min(1, Math.max(breath.stress, amount)); }
 
   // Fade BOTH the dry master and the reverb return — one-shots send straight to
   // the convolver, so fading master alone would let wet/reverb tails leak through.
@@ -752,15 +869,16 @@ export const Audio = (() => {
   function resetMix() {
     if (!ctx) return;
     setMuffle(20000, 0.4);
-    if (bed.gain) bed.gain.gain.setTargetAtTime(0.5, now(), 0.5);   // undo any ducking
-    if (revGain) revGain.gain.setTargetAtTime(0.7, now(), 0.5);     // restore reverb after a fadeOut
+    if (bed.gain) bed.gain.gain.setTargetAtTime(bed.base ?? 0.38, now(), 0.5);   // undo any ducking
+    if (revGain) revGain.gain.setTargetAtTime(0.62, now(), 0.5);                  // restore reverb after a fadeOut
     heart.spike = 0; heart.rate = 60;
+    if (breath.gain) { breath.stress = 0; breath.gain.gain.setTargetAtTime(0, now(), 0.4); }
     tension = 0; targetTension = 0.12;
     fadeIn(2.5);
   }
 
   return {
-    init, unlock, start, update, setZone, setTension, bumpHeart,
+    init, unlock, start, update, setZone, setTension, bumpHeart, bumpBreath,
     creak, drip, whisper, moan, distantScream, footstep, rustle, flutter,
     skitter, eyeGlimpse, shadowShift, mirrorSting, slam, doorCreak, lockedDoor,
     stinger, crescendo, stopCrescendo, duck, setMuffle, hush, fadeOut, fadeIn, resetMix,
