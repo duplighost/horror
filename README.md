@@ -91,6 +91,8 @@ src/
     forest.js         # the wood + the looming house
     mansion.js        # the wallpapered, portrait-hung maze of halls
     basement.js       # stone giving way to flesh; reality slips
+    deepLevels.js     # the deeper wings — conservatory, library, nursery,
+                      #   bathhouse, gallery, chapel — each its own labyrinth
     final.js          # the ritual chamber and the eye
 vendor/three.module.min.js
 ```
@@ -99,9 +101,11 @@ A few of the tricks used to make it big, confusing, and frightening:
 
 - **Fog hides the edge of the world.** Draw distance is short on purpose; you
   can never see far enough to map the place, so it feels endless.
-- **Real mazes.** Forest, mansion, and basement are all navigable mazes with
-  braided loops, so you genuinely get lost — and keys sit at the farthest
-  dead-ends.
+- **Real mazes.** Every level is a navigable labyrinth with braided loops, so
+  you genuinely get lost — and the key always sits at the farthest dead-end. The
+  descent runs ten environments deep; as you go, the mazes grow, the loops
+  close into dead-ends, the fog thickens, and the guiding embers thin out until
+  the house stops helping you.
 - **Reality slips.** Down in the basement, a couple of corridors quietly
   teleport you somewhere you've already been.
 - **The Director watches you.** Scares aren't on timers. The Presence appears in

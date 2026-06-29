@@ -73,7 +73,7 @@ export function buildForest(ctx) {
   const gtex = groundTexture();
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(320, 320, 1, 1),
-    new THREE.MeshStandardMaterial({ map: gtex, roughness: 0.62, metalness: 0.18 }));
+    new THREE.MeshStandardMaterial({ map: gtex, bumpMap: gtex, bumpScale: 0.08, roughness: 0.62, metalness: 0.18 }));
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; group.add(ground);
 
   // faint cold moon so silhouettes read beyond the torch
@@ -100,7 +100,8 @@ export function buildForest(ctx) {
   }
 
   // --- trees: a few gnarled dead-tree variants, each instanced ---
-  const trunkMat = new THREE.MeshStandardMaterial({ map: barkTexture(), roughness: 0.92 });
+  const barkTex = barkTexture();
+  const trunkMat = new THREE.MeshStandardMaterial({ map: barkTex, bumpMap: barkTex, bumpScale: 0.105, roughness: 0.92 });
   const maxTrees = Quality.maxInstancedTrees;
   const VARIANTS = 4;
   const variants = [];
@@ -151,7 +152,8 @@ export function buildForest(ctx) {
   }
 
   // --- drifts of dead leaves you wade through ---
-  const leafMat = new THREE.MeshStandardMaterial({ map: leafTexture(), roughness: 0.95 });
+  const leafTex = leafTexture();
+  const leafMat = new THREE.MeshStandardMaterial({ map: leafTex, bumpMap: leafTex, bumpScale: 0.05, roughness: 0.95 });
   function leafPile(x, z, s) {
     const geo = new THREE.IcosahedronGeometry(1, 2);
     const p = geo.attributes.position;

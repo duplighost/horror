@@ -115,7 +115,7 @@ export const Audio = (() => {
 
   // ---- ambient bed ---------------------------------------------------------
   function startBed() {
-    bed.gain = ctx.createGain(); bed.gain.value = 0.0;
+    bed.gain = ctx.createGain(); bed.gain.gain.value = 0.0;
     bed.lp = ctx.createBiquadFilter(); bed.lp.type = 'lowpass';
     bed.lp.frequency.value = 320; bed.lp.Q.value = 0.7;
     bed.gain.connect(bed.lp); out(bed.lp);
@@ -137,7 +137,7 @@ export const Audio = (() => {
     });
 
     // dissonant minor-second cluster that swells in at high tension
-    bed.dissGain = ctx.createGain(); bed.dissGain.value = 0.0;
+    bed.dissGain = ctx.createGain(); bed.dissGain.gain.value = 0.0;
     bed.dissGain.connect(bed.gain);
     [55 * 1.06, 55 * 1.41].forEach((f) => {        // ~minor 2nd & tritone, the dread interval
       const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
@@ -146,7 +146,7 @@ export const Audio = (() => {
     });
 
     // sub rumble floor
-    bed.subGain = ctx.createGain(); bed.subGain.value = 0.0; out(bed.subGain);
+    bed.subGain = ctx.createGain(); bed.subGain.gain.value = 0.0; out(bed.subGain);
     bed.sub = ctx.createOscillator(); bed.sub.type = 'sine'; bed.sub.frequency.value = 33;
     bed.sub.connect(bed.subGain); bed.sub.start();
 
@@ -157,7 +157,7 @@ export const Audio = (() => {
     wind.src = noiseSource(true);
     wind.bp = ctx.createBiquadFilter(); wind.bp.type = 'bandpass';
     wind.bp.frequency.value = 500; wind.bp.Q.value = 0.7;
-    wind.gain = ctx.createGain(); wind.gain.value = 0.0;
+    wind.gain = ctx.createGain(); wind.gain.gain.value = 0.0;
     wind.src.connect(wind.bp); wind.bp.connect(wind.gain); out(wind.gain);
     // gusting
     wind.lfo = ctx.createOscillator(); wind.lfo.type = 'sine'; wind.lfo.frequency.value = 0.08;
@@ -172,7 +172,7 @@ export const Audio = (() => {
   }
 
   function startHeart() {
-    heart.gain = ctx.createGain(); heart.gain.value = 1.0; out(heart.gain);
+    heart.gain = ctx.createGain(); heart.gain.gain.value = 1.0; out(heart.gain);
     heart.on = true; heart.next = now() + 1; heart.rate = 60; heart.spike = 0;
   }
 
@@ -224,15 +224,24 @@ export const Audio = (() => {
   function drip(pos) {
     if (!ctx) return;
     const t = now(); const p = panFor(pos);
-    const o = ctx.createOscillator(); o.type = 'sine';
+    const s = noiseSource(false);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 620 + Math.random() * 280;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 180 + Math.random() * 130; bp.Q.value = 2.6;
     const g = ctx.createGain();
-    o.frequency.setValueAtTime(900 + Math.random() * 600, t);
-    o.frequency.exponentialRampToValueAtTime(180, t + 0.12);
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.10, t + 0.005);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
-    o.connect(g); g.connect(p.in); p.out.connect(master); p.out.connect(conv);
-    o.start(t); o.stop(t + 0.25);
+    g.gain.exponentialRampToValueAtTime(0.052, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26 + Math.random() * 0.12);
+    s.connect(lp); lp.connect(bp); bp.connect(g); g.connect(p.in);
+    const sub = ctx.createOscillator(); sub.type = 'triangle';
+    const sg = ctx.createGain();
+    sub.frequency.setValueAtTime(68 + Math.random() * 18, t);
+    sub.frequency.exponentialRampToValueAtTime(38 + Math.random() * 10, t + 0.16);
+    sg.gain.setValueAtTime(0.0001, t);
+    sg.gain.exponentialRampToValueAtTime(0.045, t + 0.018);
+    sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    sub.connect(sg); sg.connect(p.in);
+    p.out.connect(master); p.out.connect(conv);
+    s.start(t); s.stop(t + 0.42); sub.start(t); sub.stop(t + 0.28);
   }
 
   function whisper(pos) {
@@ -344,6 +353,122 @@ export const Audio = (() => {
     p.out.connect(master); p.out.connect(conv);
   }
 
+  function skitter(pos, surface = 'dry') {
+    if (!ctx) return;
+    if (surface === true) surface = 'wet'; else if (surface === false) surface = 'dry';
+    const t = now(); const p = panFor(pos);
+    const wet = surface === 'wet';
+    const leaf = surface === 'leaf';
+    const tickCount = wet ? 13 : leaf ? 16 : 14;
+    for (let i = 0; i < tickCount; i++) {
+      const tt = t + i * (0.026 + Math.random() * 0.018);
+      const s = noiseSource(false);
+      const f = ctx.createBiquadFilter();
+      f.type = i % 3 === 0 ? 'bandpass' : 'highpass';
+      f.frequency.value = leaf ? 2600 + Math.random() * 2400 : wet ? 900 + Math.random() * 1800 : 1700 + Math.random() * 2600;
+      f.Q.value = 4 + Math.random() * 8;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, tt);
+      g.gain.exponentialRampToValueAtTime((wet ? 0.055 : 0.047) * (1 - i / (tickCount * 1.5)), tt + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, tt + (wet ? 0.09 : 0.045));
+      s.connect(f); f.connect(g); g.connect(p.in);
+      s.start(tt); s.stop(tt + 0.11);
+    }
+    for (let i = 0; i < 3; i++) {
+      const tt = t + 0.03 + i * 0.13;
+      const o = ctx.createOscillator(); o.type = 'triangle';
+      const g = ctx.createGain();
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 180;
+      o.frequency.setValueAtTime(74 - i * 8, tt);
+      o.frequency.exponentialRampToValueAtTime(38 - i * 3, tt + 0.08);
+      g.gain.setValueAtTime(0.0001, tt);
+      g.gain.exponentialRampToValueAtTime(0.12 - i * 0.03, tt + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.16);
+      o.connect(lp); lp.connect(g); g.connect(p.in);
+      o.start(tt); o.stop(tt + 0.2);
+    }
+    p.out.connect(master); p.out.connect(conv);
+    setMuffle(2600, 0.04);
+    setTimeout(() => setMuffle(20000, 0.45), 180);
+  }
+
+  function eyeGlimpse(pos) {
+    if (!ctx) return;
+    const t = now(); const p = panFor(pos);
+    const s = noiseSource(false);
+    const hp = ctx.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 980; hp.Q.value = 2.8;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.065, t + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.48);
+    s.connect(hp); hp.connect(g); g.connect(p.in);
+    [410, 610, 870].forEach((f, i) => {
+      const o = ctx.createOscillator(); o.type = 'sawtooth';
+      const og = ctx.createGain();
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1050;
+      o.frequency.setValueAtTime(f * 1.1, t);
+      o.frequency.linearRampToValueAtTime(f * 0.72, t + 0.24);
+      og.gain.setValueAtTime(0.0001, t + i * 0.018);
+      og.gain.exponentialRampToValueAtTime(0.018 / (i + 1), t + 0.055 + i * 0.018);
+      og.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+      o.connect(lp); lp.connect(og); og.connect(p.in);
+      o.start(t); o.stop(t + 0.54);
+    });
+    p.out.connect(master); p.out.connect(conv);
+    s.start(t); s.stop(t + 0.55);
+  }
+
+  function shadowShift(pos) {
+    if (!ctx) return;
+    const t = now(); const p = panFor(pos);
+    const s = noiseSource(false);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 220; bp.Q.value = 0.8;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.08, t + 0.22);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    s.connect(bp); bp.connect(g); g.connect(p.in);
+    const o = ctx.createOscillator(); o.type = 'sine';
+    const og = ctx.createGain();
+    o.frequency.setValueAtTime(42, t);
+    o.frequency.linearRampToValueAtTime(34, t + 0.7);
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.linearRampToValueAtTime(0.13, t + 0.18);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.95);
+    o.connect(og); og.connect(p.in);
+    p.out.connect(master); p.out.connect(conv);
+    s.start(t); s.stop(t + 1.0); o.start(t); o.stop(t + 1.0);
+  }
+
+  function mirrorSting(pos) {
+    if (!ctx) return;
+    const t = now(); const p = panFor(pos);
+    duck(0.18, 0.04);
+    setTimeout(() => duck(1.0, 1.2), 170);
+    for (let i = 0; i < 4; i++) {
+      const o = ctx.createOscillator(); o.type = i % 2 ? 'triangle' : 'sawtooth';
+      const g = ctx.createGain();
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1200 + i * 160;
+      const f = [185, 277, 392, 554][i] * (0.97 + Math.random() * 0.06);
+      o.frequency.setValueAtTime(f * 1.08, t);
+      o.frequency.exponentialRampToValueAtTime(f * 0.58, t + 0.72);
+      g.gain.setValueAtTime(0.0001, t + i * 0.012);
+      g.gain.exponentialRampToValueAtTime(0.055 / (i + 1), t + 0.025 + i * 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.05);
+      o.connect(lp); lp.connect(g); g.connect(p.in);
+      o.start(t); o.stop(t + 1.1);
+    }
+    const s = noiseSource(false);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 760; bp.Q.value = 2.2;
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.0001, t);
+    sg.gain.linearRampToValueAtTime(0.16, t + 0.16);
+    sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.68);
+    s.connect(bp); bp.connect(sg); sg.connect(p.in);
+    p.out.connect(master); p.out.connect(conv);
+    s.start(t); s.stop(t + 0.75);
+  }
+
   function slam(pos) {
     if (!ctx) return;
     const t = now(); const p = panFor(pos);
@@ -362,6 +487,41 @@ export const Audio = (() => {
   }
 
   function doorCreak(pos) { creak(pos, true); }
+
+  // The classic "it's locked" — a few quick metallic handle rattles, then a dull
+  // thud as the door shoves against its frame and refuses to give. Dry and tense.
+  function lockedDoor(pos) {
+    if (!ctx) return;
+    const t = now(); const p = panFor(pos);
+    // handle rattle: 3 fast metallic jiggles
+    for (let i = 0; i < 3; i++) {
+      const jt = t + i * 0.082 + Math.random() * 0.012;
+      const s = noiseSource(false);
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+      bp.frequency.value = 1750 + Math.random() * 750; bp.Q.value = 7;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, jt);
+      g.gain.exponentialRampToValueAtTime(0.13 - i * 0.025, jt + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0001, jt + 0.05);
+      s.connect(bp); bp.connect(g); g.connect(p.in);
+      s.start(jt); s.stop(jt + 0.08);
+    }
+    // dull locked thud: low boom + a damped wood-knock body
+    const tt = t + 0.05;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    const og = ctx.createGain();
+    o.frequency.setValueAtTime(118, tt); o.frequency.exponentialRampToValueAtTime(56, tt + 0.12);
+    og.gain.setValueAtTime(0.0001, tt);
+    og.gain.exponentialRampToValueAtTime(0.26, tt + 0.008);
+    og.gain.exponentialRampToValueAtTime(0.0001, tt + 0.22);
+    const k = noiseSource(false);
+    const klp = ctx.createBiquadFilter(); klp.type = 'lowpass'; klp.frequency.value = 430;
+    const kg = ctx.createGain();
+    kg.gain.setValueAtTime(0.16, tt); kg.gain.exponentialRampToValueAtTime(0.0001, tt + 0.09);
+    o.connect(og); k.connect(klp); klp.connect(kg);
+    og.connect(p.in); kg.connect(p.in); p.out.connect(master); p.out.connect(conv);
+    o.start(tt); o.stop(tt + 0.3); k.start(tt); k.stop(tt + 0.12);
+  }
 
   // ---- the scream: layered jump-scare stinger ------------------------------
   // 'breath' is deliberately quiet & intimate (no chest punch). 'shriek',
@@ -441,6 +601,7 @@ export const Audio = (() => {
   let crescendoNodes = [];
   function crescendo(seconds = 14) {
     if (!ctx) return;
+    stopCrescendo();          // idempotent: a second crescendo replaces the first, never stacks
     const t = now();
     // rising dissonant cluster
     const freqs = [110, 116.5, 155, 220, 233, 311];
@@ -468,12 +629,18 @@ export const Audio = (() => {
     crescendoNodes.push(n, ng);
   }
   function stopCrescendo() {
+    if (!ctx || !crescendoNodes.length) return;
     const t = now();
-    crescendoNodes.forEach((nd) => {
+    // Hand the dying nodes to a LOCAL list and clear the shared one immediately,
+    // so a crescendo() that starts right after (it calls us first, for idempotency)
+    // builds into a fresh array this teardown won't wipe.
+    const dying = crescendoNodes;
+    crescendoNodes = [];
+    dying.forEach((nd) => {
       try { if (nd.gain) nd.gain.cancelScheduledValues(t), nd.gain.setTargetAtTime(0.0001, t, 0.3);
             else if (nd.stop) nd.stop(t + 1); } catch (e) {}
     });
-    setTimeout(() => { crescendoNodes.forEach((nd) => { try { nd.disconnect(); } catch (e) {} }); crescendoNodes = []; }, 1500);
+    setTimeout(() => { dying.forEach((nd) => { try { nd.disconnect(); } catch (e) {} }); }, 1500);
   }
 
   // ---- mixing controls -----------------------------------------------------
@@ -514,7 +681,11 @@ export const Audio = (() => {
     if (bed.lp) bed.lp.frequency.setTargetAtTime(280 + tension * 1400, now(), 0.3);
     if (bed.dissGain) bed.dissGain.gain.setTargetAtTime(tension * tension * 0.9, now(), 0.4);
     if (bed.subGain) bed.subGain.gain.setTargetAtTime(0.12 + tension * 0.5, now(), 0.4);
-    if (wind.gain && zone === 'forest') { /* wind handled by its own lfo */ }
+    if (wind.bp) {
+      const outside = zone === 'forest' || zone === 'conservatory';
+      wind.bp.frequency.setTargetAtTime((outside ? 420 : 190) + tension * (outside ? 620 : 360), now(), 0.9);
+      wind.bp.Q.setTargetAtTime(0.65 + tension * 1.2, now(), 0.9);
+    }
 
     // heartbeat: ease the rate toward a dread-scaled resting BPM (up or down),
     // and let any scare spike fade out over ~1s.
@@ -553,8 +724,10 @@ export const Audio = (() => {
     zone = z;
     if (!started) return;
     // wind only outside; reverb longer & wetter as we descend
-    if (wind.gain) wind.gain.gain.setTargetAtTime(z === 'forest' ? 0.1 : 0.02, now(), 1.5);
-    revGain.gain.setTargetAtTime(z === 'basement' || z === 'final' ? 1.2 : z === 'mansion' ? 1.0 : 0.6, now(), 2);
+    const outside = z === 'forest' || z === 'conservatory';
+    const wet = z === 'basement' || z === 'bathhouse' || z === 'chapel' || z === 'final';
+    if (wind.gain) wind.gain.gain.setTargetAtTime(outside ? 0.1 : 0.02, now(), 1.5);
+    revGain.gain.setTargetAtTime(wet ? 1.2 : z === 'mansion' || z === 'library' || z === 'gallery' ? 1.0 : 0.75, now(), 2);
   }
 
   function setTension(v) { targetTension = Math.max(0, Math.min(1, v)); }
@@ -588,7 +761,8 @@ export const Audio = (() => {
 
   return {
     init, unlock, start, update, setZone, setTension, bumpHeart,
-    creak, drip, whisper, moan, distantScream, footstep, rustle, flutter, slam, doorCreak,
+    creak, drip, whisper, moan, distantScream, footstep, rustle, flutter,
+    skitter, eyeGlimpse, shadowShift, mirrorSting, slam, doorCreak, lockedDoor,
     stinger, crescendo, stopCrescendo, duck, setMuffle, hush, fadeOut, fadeIn, resetMix,
     get context() { return ctx; },
     get tension() { return tension; },

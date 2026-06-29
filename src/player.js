@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { CFG, Quality } from './config.js';
+const REDUCED_MOTION = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+import { CFG, Quality } from './config.js?v=graphics-terror-detail';
 
 // First-person body + camera + flashlight. Movement is velocity-based with
 // acceleration/friction for weight, axis-resolved against the active collider
@@ -25,6 +26,7 @@ export class Player {
     this.speedScale = 1;        // dread can make limbs heavy
     this.shake = 0;             // transient camera shake amount
     this._shakeV = new THREE.Vector3();
+    this._shakePhase = Math.random() * 100;
     this.headTilt = 0;          // forced look-at influence (0..1) toward target
     this.lookTarget = null;
 
@@ -85,25 +87,30 @@ export class Player {
   _buildFlashlight() {
     const f = CFG.flashlight;
     this.flashlight = new THREE.SpotLight(f.color, f.intensity, f.distance, f.angle, f.penumbra, 2.0);
-    this.flashlight.castShadow = Quality.shadows;
-    if (Quality.shadows) {
-      this.flashlight.shadow.mapSize.set(Quality.shadowSize, Quality.shadowSize);
-      this.flashlight.shadow.camera.near = 0.2;
-      this.flashlight.shadow.camera.far = f.distance;
-      this.flashlight.shadow.bias = -0.0009;
-      this.flashlight.shadow.radius = 3;
-    }
+    this.flashlight.castShadow = false;
     this.flashTarget = new THREE.Object3D();
     this.flashlight.target = this.flashTarget;
+    this.flashSpill = new THREE.SpotLight(
+      f.color,
+      f.spillIntensity ?? f.intensity * 0.18,
+      f.distance * 0.95,
+      f.spillAngle ?? Math.min(1.05, f.angle * 1.35),
+      0.88,
+      2.0,
+    );
+    this.flashSpill.castShadow = false;
+    this.flashSpill.target = this.flashTarget;
 
-    // a faint warm fill at the lens so nearby surfaces and your "presence" read
-    this.lens = new THREE.PointLight(0xffe0c0, 4.0, 4.0, 2);
+    // a tiny warm lens glow, kept short-range so it does not light walls you
+    // are not actually aiming at.
+    this.lens = new THREE.PointLight(0xffe0c0, 1.15, 1.45, 2);
 
     // the held cone is swayed with a little lag for a handheld feel
     this._aimDir = new THREE.Vector3(0, 0, -1);
     this.flashOn = true;
     this._offSince = 0;         // wall-clock ms when the torch went off (watchdog)
     this.baseIntensity = f.intensity;
+    this.baseSpillIntensity = f.spillIntensity ?? f.intensity * 0.18;
     this.flicker = 1;           // multiplier driven by scare system
   }
 
@@ -111,7 +118,7 @@ export class Player {
   // parented to the camera) so shadows update correctly; they persist for the
   // whole game, so there's no matching remove.
   addToScene(scene) {
-    scene.add(this.flashlight); scene.add(this.flashTarget); scene.add(this.lens);
+    scene.add(this.flashlight); scene.add(this.flashSpill); scene.add(this.flashTarget); scene.add(this.lens);
   }
 
   teleport(x, z, yaw) {
@@ -127,7 +134,7 @@ export class Player {
     this.pitch = Math.max(-lim, Math.min(lim, this.pitch));
   }
 
-  addShake(amount) { this.shake = Math.min(1.6, this.shake + amount); }
+  addShake(amount) { this.shake = Math.min(1.6, this.shake + (REDUCED_MOTION ? amount * 0.15 : amount)); }
 
   // pull the camera to look at a world point (for forced-witness beats)
   forceLook(target, strength) { this.lookTarget = target; this.headTilt = strength; }
@@ -208,7 +215,12 @@ export class Player {
 
     // shake decay
     this.shake *= Math.pow(0.0009, dt); // fast decay
-    this._shakeV.set((Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5)).multiplyScalar(this.shake * 0.18);
+    this._shakePhase += dt * (9.0 + this.shake * 18.0);
+    this._shakeV.set(
+      Math.sin(this._shakePhase * 2.1) + Math.sin(this._shakePhase * 5.7) * 0.35,
+      Math.cos(this._shakePhase * 2.7) * 0.55,
+      Math.sin(this._shakePhase * 3.3 + 1.7) * 0.65,
+    ).multiplyScalar(this.shake * 0.095);
 
     // --- compose camera transform (eye lowers smoothly when crawling) ---
     this.eyeNow += ((this.crawl ? 0.5 : this.height) - this.eyeNow) * Math.min(1, dt * 7);
@@ -223,6 +235,7 @@ export class Player {
     this._aimDir.lerp(this.forward, Math.min(1, dt * 12));
     const fpos = this.camera.position;
     this.flashlight.position.copy(fpos).addScaledVector(this.camera.up, -0.05);
+    this.flashSpill.position.copy(this.flashlight.position);
     this.flashTarget.position.copy(fpos).addScaledVector(this._aimDir, 8);
     this.lens.position.copy(fpos).addScaledVector(this.forward, 0.2);
     // safety net: the torch may never stay off longer than a scripted blackout.
@@ -235,7 +248,8 @@ export class Player {
 
     const inten = this.flashOn ? this.baseIntensity * this.flicker : 0;
     this.flashlight.intensity = inten;
-    this.lens.intensity = this.flashOn ? 4.0 * this.flicker : 0;
+    this.flashSpill.intensity = this.flashOn ? this.baseSpillIntensity * Math.max(0.55, this.flicker) : 0;
+    this.lens.intensity = this.flashOn ? 1.05 * Math.max(0.45, this.flicker) : 0;
 
     // --- viewmodel bob/sway (lags the camera, breathes, dims with the torch) ---
     if (this.viewmodel) {

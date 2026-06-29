@@ -7,7 +7,20 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="theme-color" content="#000000" />
-<title>MARROW</title>
+<meta name="description" content="Marrow — a first-person procedural horror house from Qualiacology." />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Qualiacology" />
+<meta property="og:title" content="Marrow | Qualiacology" />
+<meta property="og:description" content="A first-person procedural horror house: keys, locked doors, quiet rituals, and sound that tells you where to be afraid." />
+<meta property="og:url" content="https://qualiacology.com/marrow/" />
+<meta property="og:image" content="https://qualiacology.com/marrow/assets/marrow-card.jpg" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Marrow | Qualiacology" />
+<meta name="twitter:description" content="A first-person procedural horror house from Qualiacology." />
+<meta name="twitter:image" content="https://qualiacology.com/marrow/assets/marrow-card.jpg" />
+<link rel="canonical" href="https://qualiacology.com/marrow/" />
+<link rel="icon" href="assets/favicon.svg" />
+<title>MARROW | Qualiacology</title>
 <style>
   :root { color-scheme: dark; }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -18,6 +31,21 @@
     font-family: "Times New Roman", Georgia, serif;
   }
   #game { position: fixed; inset: 0; display: block; width: 100%; height: 100%; background: #000; }
+  .homeLink {
+    position: fixed; left: max(14px, env(safe-area-inset-left)); top: max(12px, env(safe-area-inset-top));
+    z-index: 50; color: rgba(185,178,166,0.72); text-decoration: none;
+    font: 11px/1.2 ui-sans-serif, system-ui, sans-serif; letter-spacing: .16em; text-transform: uppercase;
+    padding: 8px 10px; border: 1px solid rgba(185,178,166,0.18); border-radius: 999px;
+    background: rgba(0,0,0,0.34); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+  .homeLink:hover, .homeLink:focus-visible { color: #d8d0c2; border-color: rgba(185,178,166,0.42); outline: none; }
+  .runtime-fatal {
+    position: fixed; inset: 0; display: grid; place-items: center; background: #000; color: #9f9485;
+    padding: 24px; text-align: center; z-index: 100; font-family: Georgia, serif;
+  }
+  .runtime-fatal > div { max-width: 560px; border: 1px solid rgba(185,178,166,.18); padding: 28px; border-radius: 18px; background: rgba(20,16,12,.45); }
+  .runtime-fatal h1 { font-weight: 400; letter-spacing: .24em; text-transform: uppercase; color: #c8beb0; margin: 0 0 12px; }
+  .runtime-fatal a { color: #c8beb0; }
 
   /* Layers that sit above the canvas */
   .layer { position: fixed; inset: 0; pointer-events: none; }
@@ -60,6 +88,11 @@
     opacity: 0; animation: pulse 3.2s ease-in-out infinite, fadein 6s ease forwards;
   }
   #ear { margin-top: 2.2em; opacity: 0; animation: fadein 7s ease forwards; }
+  #content-warning {
+    margin-top: 1.15rem; max-width: 32rem; padding-inline: 1rem;
+    color: #403a34; font: 11px/1.7 ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: .18em; text-transform: uppercase; opacity: 0; animation: fadein 7.4s ease forwards;
+  }
   #ear svg { width: 22px; height: 22px; stroke: #3a352f; fill: none; }
   @keyframes breathe { 0%,100%{ opacity:.55; } 50%{ opacity:.9; } }
   @keyframes pulse { 0%,100%{ opacity:.25; } 50%{ opacity:.7; } }
@@ -89,6 +122,7 @@
 </style>
 </head>
 <body>
+  <a class="homeLink" href="/">&lt; Qualiacology</a>
   <canvas id="game"></canvas>
 
   <div id="reticle"></div>
@@ -96,24 +130,25 @@
   <div id="flash" class="layer"></div>
   <div id="fade" class="layer"></div>
 
-  <div id="boot">
+  <div id="boot" role="button" tabindex="0" aria-label="Start Marrow. Contains flashing lights and sudden audio stingers.">
     <div id="title">MARROW</div>
-    <div id="enter">touch to enter</div>
+    <div id="enter">touch / press enter</div>
     <div id="ear" title="headphones recommended">
       <svg viewBox="0 0 24 24" stroke-width="1.4"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="13.5" width="4" height="7" rx="1.6"/><rect x="17.5" y="13.5" width="4" height="7" rx="1.6"/></svg>
     </div>
+    <div id="content-warning">contains flashing lights, sudden sounds, and darkness</div>
   </div>
 
   <div id="loading">entering</div>
 
   <div id="endcard">
     <div class="et"></div>
-    <div class="es">↺</div>
+    <div class="es">restart</div>
   </div>
 
   <script type="importmap">
   { "imports": { "three": "./vendor/three.module.min.js" } }
   </script>
-  <script type="module" src="./src/main.js"></script>
+  <script type="module" src="./src/main.js?v=graphics-terror-detail"></script>
 </body>
 </html>

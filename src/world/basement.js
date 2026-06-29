@@ -34,15 +34,17 @@ export function buildBasement(ctx) {
   const fw = maxX - minX, fd = maxZ - minZ, fcx = (minX + maxX) / 2, fcz = (minZ + maxZ) / 2;
   const stex = stoneTexture(); stex.repeat.set(fw / 2.5, fd / 2.5);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd),
-    new THREE.MeshStandardMaterial({ map: stex, roughness: 0.26, metalness: 0.28 }));
+    new THREE.MeshStandardMaterial({ map: stex, bumpMap: stex, bumpScale: 0.072, roughness: 0.26, metalness: 0.28 }));
   floor.rotation.x = -Math.PI / 2; floor.position.set(fcx, 0, fcz); floor.receiveShadow = true; group.add(floor);
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd),
     new THREE.MeshStandardMaterial({ color: 0x070506, roughness: 1 }));
   ceil.rotation.x = Math.PI / 2; ceil.position.set(fcx, H, fcz); group.add(ceil);
 
   // walls (stone near entrance, flesh deep)
-  const stoneMat = new THREE.MeshStandardMaterial({ map: stoneTexture(), roughness: 1 });
-  const fleshMat = new THREE.MeshStandardMaterial({ map: fleshTexture(), roughness: 0.7, emissive: 0x180003, emissiveIntensity: 0.5 });
+  const wallStoneTex = stoneTexture();
+  const wallFleshTex = fleshTexture();
+  const stoneMat = new THREE.MeshStandardMaterial({ map: wallStoneTex, bumpMap: wallStoneTex, bumpScale: 0.06, roughness: 1 });
+  const fleshMat = new THREE.MeshStandardMaterial({ map: wallFleshTex, bumpMap: wallFleshTex, bumpScale: 0.105, roughness: 0.62, emissive: 0x180003, emissiveIntensity: 0.5 });
   const stoneXf = [], fleshXf = [];
   const m4 = new THREE.Matrix4(), pos = new THREE.Vector3(), quat = new THREE.Quaternion(), scl = new THREE.Vector3();
   const maxDist = far.dist || 1;
@@ -125,7 +127,7 @@ export function buildBasement(ctx) {
   const portalX = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 2.1), portalMat);
   portalX.position.set(ex, 1.05, ez); portalX.rotation.y = Math.PI / 2; group.add(portalX);
   const portalLight = new THREE.PointLight(0xff1020, 10, 10, 2); portalLight.position.set(ex, 1.2, ez); group.add(portalLight);
-  ctx.triggers.push({ x: ex, z: ez, r: 1.3, once: true, onEnter: (c) => { c.director.stopChase(); c.go('final'); } });
+  ctx.triggers.push({ x: ex, z: ez, r: 1.3, once: true, onEnter: (c) => { c.director.stopChase(); c.go('conservatory'); } });
 
   // --- reality slips: one-way teleports back into the maze (cooldown'd) ---
   const slipTargets = [[1, 5], [4, 2], [2, 6]];
@@ -153,12 +155,15 @@ export function buildBasement(ctx) {
   }});
 
   const zc = CFG.zones.basement;
+  let nextWetSoundAt = 0;
   function update(dt, t, player) {
     portal.material.opacity = 0.8 + Math.sin(t * 3) * 0.12;
     portalLight.intensity = 9 + Math.sin(t * 5) * 3 + Math.random() * 2;
     for (const b of breathers) { const s = b.userData.breath; const k = 1 + Math.sin(t * 1.3 + s.seed) * 0.12; b.scale.setScalar(s.base * k); }
-    // random drips
-    if (Math.random() < dt * 1.5) ctx.audio.drip(new THREE.Vector3(player.pos.x + (Math.random() - 0.5) * 6, 1.5, player.pos.z + (Math.random() - 0.5) * 6));
+    if (t > nextWetSoundAt) {
+      nextWetSoundAt = t + 4.5 + Math.random() * 6.0;
+      ctx.audio.drip(new THREE.Vector3(player.pos.x + (Math.random() - 0.5) * 7, 1.5, player.pos.z + (Math.random() - 0.5) * 7));
+    }
   }
 
   return {

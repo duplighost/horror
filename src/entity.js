@@ -38,16 +38,22 @@ export class Entity {
     this.height = 2.2;
     this._twitchUntil = 0;
     this._twitch = new THREE.Vector3();
+    this._stepT = 0;
+    this._hasSkittered = false;
+    this.crawlMove = false;
   }
 
   _build() {
     const g = this.group;
     // dark, wet, dead flesh — kept low-albedo so the torch reveals form instead
     // of blowing it out to a white blob at close range
-    const flesh = new THREE.MeshStandardMaterial({ color: 0x4c3f39, roughness: 0.42, metalness: 0.0, emissive: 0x130606, emissiveIntensity: 0.1 });
-    const bone = new THREE.MeshStandardMaterial({ color: 0x8f8676, roughness: 0.55 });
+    const flesh = new THREE.MeshPhysicalMaterial({ color: 0x090606, roughness: 0.58, metalness: 0.0, clearcoat: 0.42, clearcoatRoughness: 0.74, emissive: 0x070202, emissiveIntensity: 0.08 });
+    const bone = new THREE.MeshStandardMaterial({ color: 0x18130f, roughness: 0.82 });
     const cavity = new THREE.MeshBasicMaterial({ color: 0x040203 });
-    this.mawMat = new THREE.MeshStandardMaterial({ color: 0x2a0608, roughness: 0.5, emissive: 0x4a0206, emissiveIntensity: 0.0 });
+    this.mawMat = new THREE.MeshPhysicalMaterial({ color: 0x2a0608, roughness: 0.42, clearcoat: 0.35, clearcoatRoughness: 0.62, emissive: 0x4a0206, emissiveIntensity: 0.0 });
+    const shadowSkin = new THREE.MeshStandardMaterial({ color: 0x171014, roughness: 0.8, metalness: 0.0, transparent: true, opacity: 0.62, depthWrite: false });
+    const blackVeil = new THREE.MeshBasicMaterial({ color: 0x050304, transparent: true, opacity: 0.72, side: THREE.DoubleSide, depthWrite: false });
+    this.veinMat = new THREE.MeshStandardMaterial({ color: 0x3a0508, roughness: 0.36, emissive: 0x140002, emissiveIntensity: 0.12 });
 
     // --- pelvis + gaunt, hunched torso ---
     const pelvis = new THREE.Mesh(malform(new THREE.CapsuleGeometry(0.13, 0.16, 4, 8), 0.16, 5), flesh);
@@ -55,6 +61,13 @@ export class Entity {
     const torso = new THREE.Mesh(malform(new THREE.CapsuleGeometry(0.17, 0.85, 5, 12), 0.2, 3), flesh);
     torso.position.set(0.02, 1.35, 0); torso.scale.set(1, 1, 0.6); torso.rotation.x = 0.14; g.add(torso);
     this.torso = torso;
+    this.veins = [];
+    for (let i = 0; i < 6; i++) {
+      const vein = new THREE.Mesh(new THREE.CapsuleGeometry(0.006 + (i % 2) * 0.003, 0.26 + i * 0.025, 2, 5), this.veinMat);
+      vein.position.set((i - 2.5) * 0.04, 1.35 + Math.sin(i * 1.7) * 0.18, 0.112);
+      vein.rotation.set(0.32 + i * 0.04, 0.12 * Math.sin(i), (i - 2.5) * 0.22);
+      g.add(vein); this.veins.push(vein);
+    }
 
     // exposed ribs across the chest
     for (let i = 0; i < 4; i++) {
@@ -65,6 +78,17 @@ export class Entity {
     // jutting collarbone / shoulder blades
     const clav = new THREE.Mesh(new THREE.CapsuleGeometry(0.02, 0.34, 3, 6), bone);
     clav.position.set(0, 1.76, 0.05); clav.rotation.z = Math.PI / 2; g.add(clav);
+
+    // a crooked rib-halo on its back; it reads as antlers for one frame, then
+    // as exposed anatomy the next. The ambiguity does a lot of the work.
+    this.spines = [];
+    for (let i = 0; i < 7; i++) {
+      const sx = (i - 3) * 0.055;
+      const spine = new THREE.Mesh(new THREE.CapsuleGeometry(0.012, 0.48 + Math.abs(i - 3) * 0.08, 3, 6), bone);
+      spine.position.set(sx, 1.73 - Math.abs(i - 3) * 0.035, -0.09);
+      spine.rotation.set(0.68 + Math.abs(i - 3) * 0.08, sx * 4.5, sx * 3.0);
+      g.add(spine); this.spines.push(spine);
+    }
 
     // --- head: a pivot the behaviour rotates, with a permanent broken tilt inside ---
     this.head = new THREE.Group(); this.head.position.set(0.04, 1.92, 0.01); g.add(this.head);
@@ -82,6 +106,9 @@ export class Entity {
       const eye = new THREE.Mesh(new THREE.SphereGeometry(i === 2 ? 0.015 : 0.023, 10, 10), this.eyeMat);
       eye.position.set(e[0], e[1], e[2] + 0.028); tilt.add(eye);
     });
+    this.eyeLight = new THREE.PointLight(0xd8ffe8, 0.0, 4.8, 2);
+    this.eyeLight.position.set(0, 0.05, 0.23);
+    tilt.add(this.eyeLight);
 
     // the maw: a vertical gash, with a hanging lower jaw and thin teeth
     const maw = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 10), this.mawMat);
@@ -95,6 +122,19 @@ export class Entity {
       tooth.position.set(Math.cos(a) * 0.04, -0.02 + Math.sin(a) * 0.05, 0.12);
       tooth.rotation.x = Math.PI; tilt.add(tooth);
     }
+
+    // a half-formed second face tucked into the shoulder. It should not be
+    // readable at a distance; it is there for the flashlight to accidentally find.
+    this.sideFace = new THREE.Group();
+    this.sideFace.position.set(-0.19, 1.66, 0.04);
+    this.sideFace.rotation.set(0.25, -0.72, -0.15);
+    g.add(this.sideFace);
+    const sideSkull = new THREE.Mesh(malform(new THREE.SphereGeometry(0.075, 12, 10), 0.2, 41), flesh);
+    sideSkull.scale.set(0.65, 1.0, 0.8); this.sideFace.add(sideSkull);
+    const sideEye = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 8), this.eyeMat);
+    sideEye.position.set(-0.018, 0.018, 0.065); this.sideFace.add(sideEye);
+    const sideMaw = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.06, 0.012), this.mawMat);
+    sideMaw.position.set(0.012, -0.035, 0.066); this.sideFace.add(sideMaw);
 
     // --- arms: too long, asymmetric, bent, with splayed fingers ---
     this.arms = [];
@@ -113,6 +153,48 @@ export class Entity {
       }
       this.arms.push(pivot);
     });
+
+    // wrong extra limbs folded against the ribs: they only read in flashes, which
+    // makes the silhouette feel less like one simple humanoid.
+    for (let i = 0; i < 3; i++) {
+      const sx = i === 1 ? 0 : (i === 0 ? -1 : 1);
+      const limb = new THREE.Mesh(malform(new THREE.CapsuleGeometry(0.022, 0.85 + i * 0.18, 3, 6), 0.18, 31 + i), flesh);
+      limb.position.set(sx * (0.12 + i * 0.04), 1.34 - i * 0.08, -0.06);
+      limb.rotation.set(0.9 + i * 0.25, sx * 0.35, sx * (0.65 + i * 0.2));
+      g.add(limb);
+    }
+
+    // hair/veil strips that drag behind the head and twitch independently.
+    this.veils = [];
+    for (let i = 0; i < 7; i++) {
+      const strip = new THREE.Mesh(new THREE.PlaneGeometry(0.04 + (i % 3) * 0.018, 0.85 + Math.random() * 0.6), shadowSkin);
+      strip.position.set((i - 3) * 0.035, 1.62 - Math.random() * 0.25, -0.10 - Math.random() * 0.06);
+      strip.rotation.set(0.2 + Math.random() * 0.3, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.5);
+      g.add(strip); this.veils.push(strip);
+    }
+
+    // ragged black negative-space around the torso. These are unlit on purpose:
+    // even under the flashlight the Presence should keep a wrong silhouette.
+    this.rags = [];
+    for (let i = 0; i < 9; i++) {
+      const rag = new THREE.Mesh(new THREE.PlaneGeometry(0.055 + (i % 3) * 0.025, 1.0 + Math.random() * 0.7), blackVeil);
+      rag.position.set((i - 4) * 0.045, 1.16 + Math.random() * 0.26, 0.03 + (i % 2) * 0.035);
+      rag.rotation.set((Math.random() - 0.5) * 0.22, (Math.random() - 0.5) * 0.8, (i - 4) * 0.08);
+      rag.renderOrder = 2;
+      g.add(rag); this.rags.push(rag);
+    }
+
+    // a second eye cluster in the chest: visible for a split second under the
+    // flashlight, then lost in the ribs.
+    this.chestEyes = [];
+    for (let i = 0; i < 5; i++) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.012 + (i % 2) * 0.006, 8, 8), this.eyeMat);
+      eye.position.set((i - 2) * 0.045, 1.48 + Math.sin(i) * 0.09, 0.16);
+      g.add(eye); this.chestEyes.push(eye);
+    }
+    this.chestLight = new THREE.PointLight(0xff2430, 0.0, 3.8, 2);
+    this.chestLight.position.set(0, 1.48, 0.2);
+    g.add(this.chestLight);
 
     // --- legs: thin, bent ---
     this.legs = [];
@@ -138,11 +220,25 @@ export class Entity {
     this.mode = mode;
     this.lifetime = 0;
     this.observedTime = 0;
+    this._hasSkittered = false;
+    // Reset the animation clock every appearance. The Presence is ONE shared
+    // instance respawned dozens of times a session; if phase just kept growing,
+    // the twitch/jaw/jitter timing drifted and sin() precision rotted.
+    this.phase = 0;
+    this._twitchUntil = 0;
+    this._twitch.set(0, 0, 0);
+    this._stepT = 0;
     this.dwell = opts.dwell ?? (mode === 'guard' ? 9999 : 0.55);
     this.speed = opts.speed ?? (mode === 'chase' ? 3.7 : mode === 'approach' ? 0.85 : 0);
+    this.crawlMove = opts.crawl === true || mode === 'chase' || (mode === 'cross' && this.speed > 5.0);
+    this.hold = opts.hold === true;     // a starer that vanishes when you look away, not when you look at it
+    this._seen = false;
+    this.target.copy(this.pos);
     if (opts.target) this.target.set(opts.target.x, 0, opts.target.z);
     this.onReach = opts.onReach ?? null;
     this.group.visible = true;
+    this.group.scale.set(1, 1, 1);
+    if (!this.crawlMove) this._stride(0, 1, false);
     this.eyeMat.emissiveIntensity = mode === 'guard' ? 2.4 : 1.7;
   }
 
@@ -155,6 +251,7 @@ export class Entity {
     if (!this.group.visible) return;
     this.group.visible = false;
     this.mode = 'hidden';
+    this.crawlMove = false;
     if (!silent && this.vanishSound && audio) audio.whisper(this.pos);
   }
 
@@ -184,17 +281,29 @@ export class Entity {
     const watched = this._beingWatched(player, field);
     if (watched) this.observedTime += dt; else this.observedTime = Math.max(0, this.observedTime - dt * 2);
 
-    let baseY = Math.sin(this.phase * 1.7) * 0.01;
+    const crawl = this.crawlMove;
+    let baseY = Math.sin(this.phase * 1.7) * 0.01 - (crawl ? 0.18 : 0);
 
     if (this.mode === 'idle') {
       this.faceToward(player.pos.x, player.pos.z);
-      if (this.observedTime > this.dwell || this.lifetime > 9) this.despawn(audio);
+      if (this.hold) {
+        // a starer: it does NOT run when you look at it. It just watches. It is
+        // gone the instant you look away — which is far worse than fleeing, and
+        // nothing like the peek-and-run tell. (Once you've actually seen it.)
+        if (this.observedTime > 0.05) this._seen = true;
+        if (this._seen && !watched && this.observedTime <= 0) this.despawn(audio);
+        else if (this.lifetime > 8) this.despawn(audio);
+      } else if (this.observedTime > this.dwell && !this._hasSkittered) {
+        this._skitterAway(player, dist);
+      } else if (this.lifetime > 9) {
+        this.despawn(audio);
+      }
     } else if (this.mode === 'approach') {
       this.faceToward(player.pos.x, player.pos.z);
       if (!watched && dist > 1.2) {
         const s = this.speed * dt;
         this.pos.x += (dx / dist) * s; this.pos.z += (dz / dist) * s;
-        this._stride(dt);
+        this._stride(dt, crawl ? 2.6 : 1.4, crawl);
       }
       if (this.observedTime > this.dwell + dist * 0.04) this.despawn(audio);
       if (dist < 1.1 && this.onReach) { this.onReach(); this.despawn(audio, true); }
@@ -206,7 +315,7 @@ export class Entity {
         const s = this.speed * dt;
         this.pos.x += (tx / td) * s; this.pos.z += (tz / td) * s;
         this.faceToward(this.target.x, this.target.z);
-        this._stride(dt);
+        this._stride(dt, crawl ? 3.5 : (this.speed > 4 ? 2.8 : 1.4), crawl);
       }
     } else if (this.mode === 'chase') {
       this.faceToward(player.pos.x, player.pos.z);
@@ -214,8 +323,9 @@ export class Entity {
       let nz = this.pos.z + (dz / (dist || 1)) * this.speed * dt;
       if (field) { const r = field.resolve(nx, nz, 0.3); nx = r.x; nz = r.z; }
       this.pos.set(nx, 0, nz);
-      this._stride(dt, 2.4);
-      audio && this.lifetime % 0.3 < dt && audio.footstep(this.pos, true);
+      this._stride(dt, 3.2, true);
+      this._stepT += dt;
+      if (this._stepT >= 0.3) { this._stepT -= 0.3; audio && audio.footstep(this.pos, true); }
       if (dist < 1.0 && this.onReach) { this.onReach(); this.despawn(audio, true); }
     } else if (this.mode === 'guard') {
       this.faceToward(player.pos.x, player.pos.z);
@@ -225,6 +335,16 @@ export class Entity {
     const aggro = (this.mode === 'guard' || this.mode === 'chase') ? 1
                 : THREE.MathUtils.clamp(1 - dist / 7, 0, 1) + (watched ? 0.3 : 0);
     const ag = THREE.MathUtils.clamp(aggro, 0, 1);
+    const crawlK = crawl ? 1 : 0;
+    this.group.scale.set(1 + crawlK * 0.08, 1 - crawlK * 0.16, 1 + crawlK * 0.1);
+    this.torso.position.set(0.02, 1.35 - crawlK * 0.34, crawlK * 0.12);
+    this.torso.rotation.x = 0.14 + crawlK * (0.78 + Math.sin(this.phase * 12) * 0.08);
+    this.torso.rotation.z = crawlK * Math.sin(this.phase * 7.2) * 0.08;
+    this.head.position.set(
+      0.04 + crawlK * Math.sin(this.phase * 13) * 0.035,
+      1.92 - crawlK * 0.58,
+      0.01 + crawlK * 0.23,
+    );
 
     // sharp involuntary head twitches
     if (this.phase > this._twitchUntil) {
@@ -233,23 +353,95 @@ export class Entity {
     }
     const tw = this._twitch, sw = 1 - Math.min(1, (this._twitchUntil - this.phase) * 4);
     const lean = this.mode === 'guard' ? -Math.max(0, 1 - dist / 8) * 0.5 : 0;
-    this.head.rotation.x = lean + tw.x * sw + Math.sin(this.phase * 9) * 0.02;
+    this.head.rotation.x = lean - crawlK * 0.38 + tw.x * sw + Math.sin(this.phase * 9) * (0.02 + crawlK * 0.035);
     this.head.rotation.y = tw.y * sw;
-    this.head.rotation.z = tw.z * sw + Math.sin(this.phase * 6.1) * 0.03;
+    this.head.rotation.z = crawlK * 0.32 + tw.z * sw + Math.sin(this.phase * 6.1) * (0.03 + crawlK * 0.08);
 
     // jaw hangs, drops further when aggressive; maw glows from within
     this.jaw.rotation.x = 0.25 + ag * 0.7 + Math.sin(this.phase * 5) * 0.05 * ag;
     this.mawMat.emissiveIntensity = ag * (1.2 + Math.sin(this.phase * 11) * 0.4);
     this.eyeMat.emissiveIntensity = (this.mode === 'guard' ? 2.2 : 1.5) + ag * 1.5 + Math.sin(this.phase * 13) * 0.25 * ag;
+    if (this.eyeLight) this.eyeLight.intensity = (0.05 + ag * 0.52) * (this.mode === 'guard' ? 1.3 : 1);
+    if (this.chestLight) this.chestLight.intensity = Math.max(0, Math.max(0, ag - 0.25) * 0.9 + Math.sin(this.phase * 17) * 0.035 * ag);
+    if (this.veinMat) this.veinMat.emissiveIntensity = 0.1 + ag * 0.42;
+    if (this.veins) {
+      for (let i = 0; i < this.veins.length; i++) {
+        this.veins[i].scale.y = 0.9 + ag * 0.3 + Math.sin(this.phase * 8 + i) * 0.045;
+      }
+    }
 
     // stop-motion micro-jitter of the whole body (more violent up close)
     const jit = 0.006 + ag * 0.02;
-    this.group.position.set(this.pos.x + (Math.random() - 0.5) * jit, baseY, this.pos.z + (Math.random() - 0.5) * jit);
+    const step = Math.floor(this.phase * (crawl ? 22 : 14));
+    const frac = (n) => n - Math.floor(n);
+    const jx = frac(Math.sin(step * 12.9898) * 43758.5453) - 0.5;
+    const jz = frac(Math.sin(step * 78.233 + 9.7) * 24634.6345) - 0.5;
+    this.group.position.set(this.pos.x + jx * jit, baseY, this.pos.z + jz * jit);
+    if (this.veils) {
+      for (let i = 0; i < this.veils.length; i++) {
+        this.veils[i].rotation.z += Math.sin(this.phase * 9 + i) * 0.002 * (1 + ag);
+        this.veils[i].material.opacity = 0.42 + ag * 0.26 + Math.sin(this.phase * 11 + i) * 0.08;
+      }
+    }
+    if (this.rags) {
+      for (let i = 0; i < this.rags.length; i++) {
+        this.rags[i].rotation.z += Math.sin(this.phase * 6.5 + i) * 0.002 * (1 + ag);
+        this.rags[i].scale.y = 0.92 + ag * 0.24 + Math.sin(this.phase * 8 + i) * 0.06;
+        this.rags[i].material.opacity = 0.52 + ag * 0.22 + Math.sin(this.phase * 9 + i) * 0.08;
+      }
+    }
+    if (this.chestEyes) {
+      for (let i = 0; i < this.chestEyes.length; i++) {
+        this.chestEyes[i].scale.setScalar(0.7 + ag * 0.9 + Math.sin(this.phase * 17 + i) * 0.18);
+      }
+    }
+    if (this.spines) {
+      for (let i = 0; i < this.spines.length; i++) {
+        this.spines[i].rotation.z += Math.sin(this.phase * 5.5 + i) * 0.0025 * (1 + ag * 2);
+        this.spines[i].rotation.x += Math.cos(this.phase * 4.2 + i) * 0.0015 * (1 + ag);
+      }
+    }
+    if (this.sideFace) {
+      this.sideFace.rotation.y = -0.72 + Math.sin(this.phase * 7.5) * 0.08 + ag * 0.18;
+      this.sideFace.rotation.z = -0.15 + Math.sin(this.phase * 11.0) * 0.035;
+    }
   }
 
-  _stride(dt, scale = 1.4) {
+  _skitterAway(player, dist) {
+    const dx = this.pos.x - player.pos.x, dz = this.pos.z - player.pos.z;
+    const d = dist || Math.hypot(dx, dz) || 1;
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const px = (dz / d) * side, pz = (-dx / d) * side;
+    const back = Math.random() < 0.45 ? 1.8 : 0.3;
+    this.target.set(this.pos.x + px * 4.2 + (dx / d) * back, 0, this.pos.z + pz * 4.2 + (dz / d) * back);
+    this.mode = 'cross';
+    this.speed = 5.6 + Math.random() * 1.5;
+    this.crawlMove = true;
+    this._hasSkittered = true;
+    this.observedTime = 0;
+  }
+
+  _stride(dt, scale = 1.4, crawl = false) {
     const sw = Math.sin(this.phase * 6 * scale);
-    if (this.legs[0]) { this.legs[0].rotation.x = sw * 0.5; this.legs[1].rotation.x = -sw * 0.5; }
-    if (this.arms[0]) { this.arms[0].rotation.x = -sw * 0.3 + 0.1; this.arms[1].rotation.x = sw * 0.3 + 0.1; }
+    if (crawl) {
+      const claw = Math.sin(this.phase * 13 * scale);
+      if (this.legs[0]) {
+        this.legs[0].rotation.set(-1.05 + claw * 0.42, 0.35, 0.86 + Math.cos(this.phase * 10 * scale) * 0.2);
+        this.legs[1].rotation.set(-1.05 - claw * 0.42, -0.35, -0.86 + Math.sin(this.phase * 11 * scale) * 0.2);
+      }
+      if (this.arms[0]) {
+        this.arms[0].rotation.set(-1.35 - claw * 0.36, -0.45, 1.1 + Math.sin(this.phase * 12 * scale) * 0.18);
+        this.arms[1].rotation.set(-1.35 + claw * 0.36, 0.45, -1.1 + Math.cos(this.phase * 12 * scale) * 0.18);
+      }
+      return;
+    }
+    if (this.legs[0]) {
+      this.legs[0].rotation.set(sw * 0.5, 0, 0);
+      this.legs[1].rotation.set(-sw * 0.5, 0, 0);
+    }
+    if (this.arms[0]) {
+      this.arms[0].rotation.set(-sw * 0.3 + 0.1, 0, 0);
+      this.arms[1].rotation.set(sw * 0.3 + 0.1, 0, 0);
+    }
   }
 }

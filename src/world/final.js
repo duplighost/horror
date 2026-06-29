@@ -34,8 +34,9 @@ function wall(group, field, x, z, sx, sz, h, mat) {
 function buildEye() {
   const g = new THREE.Group();
   const R = 2.8;
+  const eyeTex = eyeballTexture();
   const sclera = new THREE.Mesh(new THREE.SphereGeometry(R, 48, 36),
-    new THREE.MeshStandardMaterial({ map: eyeballTexture(), roughness: 0.18, metalness: 0.0, emissive: 0x180404, emissiveIntensity: 0.35 }));
+    new THREE.MeshStandardMaterial({ map: eyeTex, bumpMap: eyeTex, bumpScale: 0.045, roughness: 0.18, metalness: 0.0, emissive: 0x180404, emissiveIntensity: 0.35 }));
   g.add(sclera);
   const look = new THREE.Group(); g.add(look);
   const iris = new THREE.Mesh(new THREE.CircleGeometry(R * 0.44, 40),
@@ -46,7 +47,8 @@ function buildEye() {
   const glow = new THREE.PointLight(0xff1414, 0.0, 24, 2); glow.position.z = R; g.add(glow);
 
   // two fleshy lids that part as it opens
-  const lidMat = new THREE.MeshStandardMaterial({ map: fleshTexture(), roughness: 0.8, emissive: 0x0a0000, emissiveIntensity: 0.3 });
+  const lidTex = fleshTexture();
+  const lidMat = new THREE.MeshStandardMaterial({ map: lidTex, bumpMap: lidTex, bumpScale: 0.075, roughness: 0.8, emissive: 0x0a0000, emissiveIntensity: 0.3 });
   const lidH = R * 1.5, lidW = R * 2.8;
   const top = new THREE.Mesh(new THREE.BoxGeometry(lidW, lidH, 0.3), lidMat);
   const bot = new THREE.Mesh(new THREE.BoxGeometry(lidW, lidH, 0.3), lidMat);
@@ -62,19 +64,31 @@ export function buildFinal(ctx) {
   const field = new ColliderField(4);
 
   // materials — wet, near-black
-  const wetFloorMat = new THREE.MeshStandardMaterial({ map: stoneTexture(), color: 0x4a4044, roughness: 0.16, metalness: 0.35 });
-  const wallMat = new THREE.MeshStandardMaterial({ map: fleshTexture(), color: 0x6a5a5a, roughness: 0.7, emissive: 0x0a0001, emissiveIntensity: 0.25 });
+  const wetFloorTex = stoneTexture();
+  const wallFleshTex = fleshTexture();
+  const wetFloorMat = new THREE.MeshStandardMaterial({ map: wetFloorTex, bumpMap: wetFloorTex, bumpScale: 0.075, color: 0x4a4044, roughness: 0.16, metalness: 0.35 });
+  const wallMat = new THREE.MeshStandardMaterial({ map: wallFleshTex, bumpMap: wallFleshTex, bumpScale: 0.095, color: 0x6a5a5a, roughness: 0.7, emissive: 0x0a0001, emissiveIntensity: 0.25 });
 
   const H = 4.0;
-  // corridor: z 2 -> -16, width 3
+  // The final opens wide before it tightens: a ritual antechamber, a rib-maze,
+  // then the straight throat to the altar. It mirrors the whole game in one room.
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 40), wetFloorMat);
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, -14); floor.receiveShadow = true; group.add(floor);
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(16, 40), new THREE.MeshStandardMaterial({ color: 0x050203 }));
   ceil.rotation.x = Math.PI / 2; ceil.position.set(0, H, -14); group.add(ceil);
 
-  // corridor walls
-  wall(group, field, -1.8, -7, 0.4, 18, H, wallMat);
-  wall(group, field, 1.8, -7, 0.4, 18, H, wallMat);
+  // antechamber + rib-maze side walls
+  wall(group, field, -7, -5, 0.4, 22, H, wallMat);
+  wall(group, field, 7, -5, 0.4, 22, H, wallMat);
+  wall(group, field, 0, 6, 14, 0.4, H, wallMat);
+  // alternating baffles make a simple, readable final maze: one path, strong silhouettes.
+  const ribTex = fleshTexture();
+  const ribMat = new THREE.MeshStandardMaterial({ map: ribTex, bumpMap: ribTex, bumpScale: 0.09, color: 0x4c363a, roughness: 0.72, emissive: 0x160002, emissiveIntensity: 0.3 });
+  for (let i = 0; i < 5; i++) {
+    const z = 0.8 - i * 3.0;
+    if (i % 2 === 0) wall(group, field, 1.45, z, 10.7, 0.28, H, ribMat);
+    else wall(group, field, -1.45, z, 10.7, 0.28, H, ribMat);
+  }
   // chamber (x -6..6, z -16..-30)
   wall(group, field, -6, -23, 0.4, 14, H, wallMat);   // left
   wall(group, field, 6, -23, 0.4, 14, H, wallMat);    // right
@@ -93,6 +107,24 @@ export function buildFinal(ctx) {
   field.addCircle(0, -25, 0.72);
   const relic = makeRelic(); const relicPos = new THREE.Vector3(0, 1.2, -25); relic.position.copy(relicPos); group.add(relic);
 
+  // The antechamber holds nine mute memories of the places behind you.
+  const memoryLights = [];
+  const memoryColors = [0x7affcc, 0xffaa44, 0xff2020, 0x80ffd8, 0xb492ff, 0xff7aa5, 0x8eefff, 0xff86dc, 0xff5330];
+  for (let i = 0; i < 9; i++) {
+    const side = i % 2 ? 1 : -1;
+    const row = Math.floor(i / 2);
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x130b0c, roughness: 0.7, metalness: 0.25 });
+    const glowMat = new THREE.MeshBasicMaterial({ color: memoryColors[i], transparent: true, opacity: 0.0, side: THREE.DoubleSide });
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.4, 1.25), frameMat);
+    frame.position.set(side * 6.75, 1.2, 3.0 - row * 2.0);
+    group.add(frame);
+    const pane = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 2.1), glowMat);
+    pane.position.set(side * 6.52, 1.25, 3.0 - row * 2.0);
+    pane.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+    group.add(pane);
+    memoryLights.push({ pane, glowMat, seed: i * 0.7 });
+  }
+
   // two braziers framing the approach + a few real lights for the wet sheen
   ctx.flamesExtra = ctx.flamesExtra || [];
   for (const sx of [-1, 1]) {
@@ -104,7 +136,12 @@ export function buildFinal(ctx) {
   // a SEA of candles flanking the throat and ringing the altar (sprites only)
   const candles = [];
   function candleAt(x, y, z) { const c = makeCandle(0.08 + Math.random() * 0.1); c.position.set(x, y, z); group.add(c); candles.push(c); }
-  for (let z = 1; z >= -15; z -= 1.3) { candleAt(-1.55, 0, z); candleAt(1.55, 0, z); }       // corridor walls
+  for (let z = 4.5; z >= -15; z -= 1.3) { candleAt(-5.65, 0, z); candleAt(5.65, 0, z); }       // antechamber / maze walls
+  for (let i = 0; i < 5; i++) {                                                                 // candles in the real baffle gaps
+    const z = -0.7 - i * 3.0;
+    const x = i % 2 === 0 ? -5.15 : 5.15;
+    candleAt(x, 0, z); candleAt(x * 0.82, 0, z - 0.55);
+  }
   for (let z = -16.5; z >= -24; z -= 1.4) { candleAt(-2.4 - Math.random(), 0, z); candleAt(2.4 + Math.random(), 0, z); } // chamber sides
   for (let i = 0; i < 14; i++) {                                                                // scattered pools near altar
     const a = Math.random() * Math.PI * 2, r = 1.4 + Math.random() * 2.2;
@@ -140,8 +177,12 @@ export function buildFinal(ctx) {
   // place the guardian over the altar the moment we arrive
   const guardPos = { x: 0, z: -27 };
 
+  eye.userData.memoryLights = memoryLights;
+  eye.userData.endBloom = 0;
+
   const zc = CFG.zones.final;
   let crescendoFired = false;
+  let midBeatFired = false;
 
   function update(dt, t, player) {
     // candle flicker (cheap — just sprite scale/opacity)
@@ -162,36 +203,69 @@ export function buildFinal(ctx) {
     const dRelic = Math.hypot(dz, dx2);
     const near = THREE.MathUtils.clamp(1 - (dRelic - 1.2) / 12, 0, 1);
 
-    // the eye opens as you near, pupil fixes on you, glow swells
+    // the eye opens as you near, pupil fixes on you, glow swells. Once the
+    // ending sequence begins (endBloom>0) the Director's scripted beats OWN the
+    // eye and the post FX — so we stop driving them from proximity here, or the
+    // two fight each other every frame.
     const ud = eye.userData;
-    ud.openness += (Math.pow(near, 1.3) - ud.openness) * Math.min(1, dt * 1.5);
+    const ending = ud.endBloom > 0;
+    if (!ending) ud.openness += (Math.pow(near, 1.3) - ud.openness) * Math.min(1, dt * 1.5);
+    // the lids always follow openness (whoever set it)
     ud.top.position.y = ud.lidH / 2 + ud.openness * ud.lidH * 1.05;
     ud.bot.position.y = -ud.lidH / 2 - ud.openness * ud.lidH * 1.05;
-    ud.glow.intensity = ud.openness * 55 + Math.sin(t * 9) * ud.openness * 10;
-    ud.pupil.scale.setScalar(0.7 + ud.openness * 0.6 + Math.sin(t * 3) * 0.05);
-    // iris/pupil track the player
+    if (!ending) {
+      // a faint breathing under-glow even while SHUT, so the eye looms red
+      // through the fog as a thing to approach long before it opens.
+      const breath = 2.6 + Math.sin(t * 0.85) * 1.3;
+      ud.glow.intensity = Math.max(breath, ud.openness * 55 + Math.sin(t * 9) * ud.openness * 10);
+      ud.pupil.scale.setScalar(0.7 + ud.openness * 0.6 + Math.sin(t * 3) * 0.05);
+    }
+    // iris/pupil track the player (kept running through the ending — it keeps staring)
     const epos = new THREE.Vector3(); eye.getWorldPosition(epos);
     const ang = Math.atan2(player.pos.x - epos.x, (player.pos.z - epos.z));
     const pitch = Math.atan2(player.camera.position.y - epos.y, Math.hypot(player.pos.x - epos.x, player.pos.z - epos.z));
     ud.look.rotation.y = THREE.MathUtils.clamp(ang, -0.6, 0.6);
     ud.look.rotation.x = THREE.MathUtils.clamp(-pitch, -0.4, 0.4);
 
-    // drive the global dread from proximity
-    ctx.post.set('dread', near * 0.85);
-    ctx.post.set('tunnel', Math.pow(near, 1.5) * 0.8);
-    ctx.post.set('desat', 0.25 + near * 0.4);
-    ctx.audio.setTension(Math.max(ctx.audio.tension, near));
-    ctx.audio.bumpHeart(near, 70 + near * 70);
-    if (near > 0.18) player.addShake(near * 0.05);
-    // it gets physically harder to move the closer you get
-    player.speedScale = 1 - near * 0.55;
+    if (!ending) {
+      // drive the global dread from proximity
+      ctx.post.set('dread', near * 0.85);
+      ctx.post.set('tunnel', Math.pow(near, 1.5) * 0.8);
+      ctx.post.set('desat', 0.25 + near * 0.4);
+      ctx.audio.setTension(Math.max(ctx.audio.tension, near));
+      ctx.audio.bumpHeart(near, 70 + near * 70);
+      if (near > 0.18) player.addShake(near * 0.05);
+      // it gets physically harder to move the closer you get
+      player.speedScale = 1 - near * 0.55;
 
-    if (!crescendoFired && near > 0.25) { crescendoFired = true; ctx.audio.crescendo(16); }
+      // a mid-approach lurch: the lids crack a sliver and the iris snaps to you,
+      // a single heavy beat — the "almost too scary to take" threshold before the
+      // real open. Fires once.
+      if (!midBeatFired && near > 0.52) {
+        midBeatFired = true;
+        ud.openness = Math.max(ud.openness, 0.16);
+        ud.glow.intensity = 26;
+        ctx.audio.hush(0.7); ctx.audio.bumpHeart(0.85, 104);
+        ctx.post.kick('pulse', 0.4); player.addShake(0.3);
+      }
+      if (!crescendoFired && near > 0.25) { crescendoFired = true; ctx.audio.crescendo(16); }
+    }
+
+    if (eye.userData.endBloom > 0) {
+      eye.userData.endBloom = Math.min(1, eye.userData.endBloom + dt * 0.18);
+      const b = eye.userData.endBloom;
+      for (const m of eye.userData.memoryLights) {
+        m.glowMat.opacity = Math.min(0.85, b * (0.35 + Math.sin(t * 4 + m.seed) * 0.18 + 0.5));
+      }
+      wallMat.emissiveIntensity = 0.25 + b * (0.8 + Math.sin(t * 5) * 0.2);
+      wetFloorMat.emissive.setHex(0x220006);
+      wetFloorMat.emissiveIntensity = b * 0.22;
+    }
   }
 
   return {
     name: 'final', group, field, flames: [],
-    spawn: { x: 0, z: 0, yaw: 0 },         // facing -Z, down the throat toward the eye
+    spawn: { x: 0, z: 5.2, yaw: 0 },       // facing -Z, through the antechamber toward the eye
     fog: { color: zc.fog, density: zc.fogDensity },
     ambient: { color: zc.ambient, intensity: zc.ambientI },
     sky: zc.sky, update,

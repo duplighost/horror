@@ -37,7 +37,7 @@ export function buildMansion(ctx) {
   const fw = maxX - minX, fd = maxZ - minZ, fcx = (minX + maxX) / 2, fcz = (minZ + maxZ) / 2;
   const floorTex = woodFloorTexture(); floorTex.repeat.set(fw / 2, fd / 2);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd),
-    new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.34, metalness: 0.2 }));
+    new THREE.MeshStandardMaterial({ map: floorTex, bumpMap: floorTex, bumpScale: 0.045, roughness: 0.34, metalness: 0.2 }));
   floor.rotation.x = -Math.PI / 2; floor.position.set(fcx, 0, fcz); floor.receiveShadow = true; group.add(floor);
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(fw, fd),
     new THREE.MeshStandardMaterial({ color: 0x0c0a09, roughness: 1 }));
@@ -45,7 +45,7 @@ export function buildMansion(ctx) {
 
   // --- walls (collected then instanced) ---
   const wallTex = wallpaperTexture();
-  const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.95 });
+  const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, bumpMap: wallTex, bumpScale: 0.032, roughness: 0.95 });
   const wallXf = [];           // {x,z,sx,sz}
   const m4 = new THREE.Matrix4(), pos = new THREE.Vector3(), quat = new THREE.Quaternion(), scl = new THREE.Vector3();
   function addWall(x, z, sx, sz, noCollide = false) {
@@ -229,6 +229,14 @@ export function buildMansion(ctx) {
   const fp = makeFireplace(); fp.position.set(wWall + 0.35, 0, PZ); fp.rotation.y = Math.PI / 2; group.add(fp);
   const fpFlame = makeFlame(0xff5a22, 0.6, 6); fpFlame.position.set(wWall + 0.55, 0.5, PZ); group.add(fpFlame); flames.push(fpFlame);
   field.addBox(wWall, PZ - 1.2, wWall + 0.7, PZ + 1.2, 2);
+  const parlorMirror = makeMirror(1.12, 1.55);
+  parlorMirror.position.set(wWall + 0.08, 1.85, PZ + 1.45);
+  parlorMirror.rotation.y = Math.PI / 2;
+  group.add(parlorMirror);
+  const parlorMirrorScare = new THREE.Vector3(wWall + 0.22, 1.82, PZ + 1.45);
+  ctx.triggers.push({ x: PX - 1.6, z: PZ + 1.35, r: 1.35, once: true, onEnter: (c) => {
+    c.director.mirrorScare?.(parlorMirrorScare);
+  } });
   // the grand staircase against the north wall — boarded at the top
   const stair = makeStaircase(7, 2.8); stair.position.set(PX, 0, nWall + 3.7); group.add(stair);
   field.addBox(PX - 1.5, nWall, PX + 1.5, nWall + 3.9, 2);

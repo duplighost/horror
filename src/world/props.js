@@ -14,9 +14,19 @@ function clothMat(c) { return new THREE.MeshStandardMaterial({ color: c, roughne
 // the dark without a single word of UI. `tone` shifts iron/brass/bone. ---------
 export function makeKey(tone = 'iron') {
   const g = new THREE.Group();
-  const colors = { iron: 0x9fb0c0, brass: 0xc9a24b, bone: 0xd8cdb0 };
-  const emis = { iron: 0x223344, brass: 0x4a3208, bone: 0x3a3320 };
-  const m = new THREE.MeshStandardMaterial({ color: colors[tone], roughness: 0.4, metalness: tone === 'bone' ? 0.1 : 0.8, emissive: emis[tone], emissiveIntensity: 0.6 });
+  const colors = {
+    iron: 0x9fb0c0, brass: 0xc9a24b, bone: 0xd8cdb0,
+    glass: 0xa7ffd6, ink: 0x8a7bd8, rose: 0xf0a0b8,
+    porcelain: 0xd8f4ff, silver: 0xd0d7dd, black: 0x5a151c,
+  };
+  const emis = {
+    iron: 0x223344, brass: 0x4a3208, bone: 0x3a3320,
+    glass: 0x164a3c, ink: 0x1c163f, rose: 0x4a1828,
+    porcelain: 0x1a4050, silver: 0x303840, black: 0x5a0008,
+  };
+  const color = colors[tone] || colors.iron;
+  const emissive = emis[tone] || emis.iron;
+  const m = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: tone === 'bone' || tone === 'porcelain' ? 0.1 : 0.8, emissive, emissiveIntensity: 0.6 });
   const bow = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.014, 8, 16), m); g.add(bow);
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.16, 8), m);
   shaft.rotation.z = Math.PI / 2; shaft.position.x = 0.1; g.add(shaft);
@@ -24,7 +34,7 @@ export function makeKey(tone = 'iron') {
     const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.035, 0.012), m);
     tooth.position.set(0.16 - i * 0.03, -0.022, 0); g.add(tooth);
   }
-  const light = new THREE.PointLight(colors[tone], 9.0, 4.5, 2.0); g.add(light);
+  const light = new THREE.PointLight(color, 9.0, 4.5, 2.0); g.add(light);
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   g.userData.spin = true;
   return g;

@@ -3,6 +3,7 @@
 // that swells when something can be touched.
 
 const $ = (id) => document.getElementById(id);
+const REDUCED_MOTION = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export const UI = {
   fade: $('fade'), flash: $('flash'), reticle: $('reticle'),
@@ -28,6 +29,10 @@ export const UI = {
   },
 
   flashWhite(intensity = 0.85, ms = 240) {
+    if (REDUCED_MOTION) {
+      intensity = Math.min(intensity, 0.18);
+      ms = Math.min(ms, 120);
+    }
     // Drive the decay with a forced reflow rather than rAF: rAF callbacks are
     // throttled in background tabs and can be starved under heavy load, which
     // could otherwise leave the white flash stuck on. A reflow commits the peak
@@ -45,7 +50,7 @@ export const UI = {
   showLoading(on) { this.loading.classList.toggle('show', on); },
   hideBoot() { this.boot.classList.add('hidden'); },
 
-  showEnd(title, sub = '↺') {
+  showEnd(title, sub = 'restart') {
     this.endcard.querySelector('.et').textContent = title;
     this.endcard.querySelector('.es').textContent = sub;
     this.endcard.classList.add('show');

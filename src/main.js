@@ -1,30 +1,57 @@
 import * as THREE from 'three';
-import { Quality, CFG, IS_TOUCH } from './config.js';
+import { Quality, CFG, IS_TOUCH } from './config.js?v=graphics-terror-detail';
 import { setTextureRenderer, softDot } from './textures.js';
-import { Audio } from './audio.js';
+import { Audio } from './audio.js?v=graphics-terror-detail';
 import { UI } from './ui.js';
 import { createControls } from './controls.js';
-import { Player } from './player.js';
+import { Player } from './player.js?v=graphics-terror-detail';
 import { Post } from './post.js';
-import { Director } from './scares.js';
+import { Director } from './scares.js?v=graphics-terror-detail';
 import { InteractionManager } from './interaction.js';
 import { flickerFlames } from './world/props.js';
 import { buildForest } from './world/forest.js';
 import { buildMansion } from './world/mansion.js';
 import { buildBasement } from './world/basement.js';
+import {
+  buildConservatory, buildLibrary, buildNursery,
+  buildBathhouse, buildGallery, buildChapel,
+} from './world/deepLevels.js';
 import { buildFinal } from './world/final.js';
 
 const canvas = document.getElementById('game');
 
+function showFatal(title, detail) {
+  document.body.innerHTML = `
+    <main class="runtime-fatal">
+      <div>
+        <h1>${title}</h1>
+        <p>${detail}</p>
+        <p><a href="/">Back to Qualiacology</a></p>
+      </div>
+    </main>
+  `;
+}
+
+if (!canvas) {
+  showFatal('Marrow failed', 'The game canvas was not found.');
+  throw new Error('Missing #game canvas');
+}
+
 // --- renderer ---
-const renderer = new THREE.WebGLRenderer({
-  canvas, antialias: false, stencil: false, powerPreference: 'high-performance',
-});
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({
+    canvas, antialias: false, stencil: false, powerPreference: 'high-performance',
+  });
+} catch (err) {
+  showFatal('WebGL failed', 'Marrow needs WebGL to draw the dark. Try a current browser with hardware acceleration enabled.');
+  throw err;
+}
 renderer.setPixelRatio(Quality.pixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.3;
+renderer.toneMappingExposure = 1.24;
 renderer.shadowMap.enabled = Quality.shadows;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 setTextureRenderer(renderer);
@@ -54,7 +81,18 @@ const ctx = {
 const director = new Director(ctx);
 ctx.director = director;
 
-const builders = { forest: buildForest, mansion: buildMansion, basement: buildBasement, final: buildFinal };
+const builders = {
+  forest: buildForest,
+  mansion: buildMansion,
+  basement: buildBasement,
+  conservatory: buildConservatory,
+  library: buildLibrary,
+  nursery: buildNursery,
+  bathhouse: buildBathhouse,
+  gallery: buildGallery,
+  chapel: buildChapel,
+  final: buildFinal,
+};
 
 // --- floating dust motes that drift through the torch beam (interiors) ---
 let motes = null;
@@ -100,6 +138,7 @@ function unloadLevel() {
 }
 
 function loadLevel(name, opts = {}) {
+  Audio.stopCrescendo();
   unloadLevel();
   ctx.interactables = []; ctx.triggers = [];
   const level = builders[name](ctx);
@@ -121,7 +160,7 @@ function loadLevel(name, opts = {}) {
   interaction.setLevel(ctx.interactables);
   activeTriggers = ctx.triggers;
   levelFlames = level.flames || [];
-  Audio.setZone(name === 'final' ? 'final' : name);
+  Audio.setZone(name);
 
   if (level.onEnter) level.onEnter(ctx);
 }
@@ -165,7 +204,7 @@ function updateTriggers() {
 let endcardReload = false;
 function endGame() {
   endcardReload = false;
-  UI.showEnd('it is yours now');
+  UI.showEnd('it kept you');
 }
 UI.endcard.addEventListener('click', () => {
   if (endcardReload) { location.reload(); return; }
@@ -187,6 +226,10 @@ function start() {
   if (started) return; started = true;
   Audio.start();
   UI.hideBoot();
+  // The branding chip lives only on the title screen. Once you're playing it
+  // must leave the screen entirely — both for "as few words as possible" and so
+  // a thumb on the mobile move-stick can't tap it and reload the page.
+  document.querySelector('.homeLink')?.style.setProperty('display', 'none');
   loadLevel('forest');
   buildMotes();
   UI.fadeTo(0, 3000);
@@ -196,6 +239,12 @@ function start() {
 }
 UI.boot.addEventListener('pointerdown', start);
 UI.boot.addEventListener('touchstart', (e) => { e.preventDefault(); start(); }, { passive: false });
+UI.boot.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    start();
+  }
+});
 
 function showMobHint() {
   const W = window.innerWidth, H = window.innerHeight;
@@ -243,7 +292,7 @@ canvas.addEventListener('webglcontextrestored', () => {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.3;
+  renderer.toneMappingExposure = 1.24;
   onResize();
   UI.showLoading(false);
   UI.fade.style.transition = 'opacity 1400ms ease';
@@ -253,7 +302,7 @@ canvas.addEventListener('webglcontextrestored', () => {
 function glWatchdog() {
   if (glLost && performance.now() - glLostAt > 7000 && !endcardReload) {
     endcardReload = true;
-    UI.showEnd('the dark swallowed the light', '↻ wake');
+    UI.showEnd('the dark swallowed the light', 'wake');
   }
 }
 
@@ -276,6 +325,20 @@ function governor(dt) {
   }
 }
 
+function updateAtmosphere(dt, t) {
+  if (!currentLevel || !scene.fog) return;
+  const tension = Audio.tension || 0;
+  const pulse = Math.sin(t * 0.41) * 0.5 + Math.sin(t * 0.17 + 1.6) * 0.5;
+  const fogTarget = currentLevel.fog.density * Quality.fogDensityScale * (1.0 + tension * 0.20 + pulse * 0.035);
+  scene.fog.density += (fogTarget - scene.fog.density) * Math.min(1, dt * 1.4);
+
+  const ambTarget = currentLevel.ambient.intensity * (1.0 - tension * 0.12 + Math.max(0, pulse) * 0.025);
+  ambient.intensity += (ambTarget - ambient.intensity) * Math.min(1, dt * 1.2);
+
+  const exposureTarget = 1.24 - tension * 0.08 + (player.flashOn ? 0 : -0.18);
+  renderer.toneMappingExposure += (exposureTarget - renderer.toneMappingExposure) * Math.min(1, dt * 2.0);
+}
+
 // Player body audio: footsteps cadenced by distance travelled (so they speed up
 // when you run), plus a soft thud when you walk into something. player.update()
 // returns this movement summary each frame.
@@ -283,7 +346,11 @@ let stepDist = 0, lastThud = 0;
 function playerFeedback(info, dt) {
   if (!info) return;
   const zone = currentLevel ? currentLevel.name : 'forest';
-  const surface = zone === 'forest' ? 'leaf' : (zone === 'basement' || zone === 'final') ? 'wet' : 'dry';
+  const surface = currentLevel && currentLevel.surface
+    ? currentLevel.surface
+    : zone === 'forest'
+      ? 'leaf'
+      : (zone === 'basement' || zone === 'bathhouse' || zone === 'chapel' || zone === 'final') ? 'wet' : 'dry';
   if (info.moving && info.horizSpeed > 0.5) {
     stepDist += info.horizSpeed * dt;        // cadence by distance travelled
     const stride = info.running ? 1.5 : 2.0;
@@ -316,11 +383,15 @@ function frame(now) {
   updateMotes(dt, time);
 
   Audio.update(dt, player.pos, player.forward);
+  updateAtmosphere(dt, time);
   if (glLost) { glWatchdog(); return; }   // keep sound + sim alive, skip GL until restored
   post.render(scene, player.camera, dt);
   governor(dt);
 }
 requestAnimationFrame(frame);
 
-// expose a little for debugging / automated testing
-window.__MARROW = { scene, player, director, go, Audio, ctx, interaction, getLevel: () => currentLevel, started: () => started };
+// expose a little for debugging / automated testing — only on an opt-in ?debug flag so the
+// go() level-teleport and mutable scene/director aren't a public surface on the live build.
+if (new URLSearchParams(location.search).has('debug') || location.hash.includes('debug')) {
+  window.__MARROW = { scene, player, director, go, Audio, ctx, interaction, getLevel: () => currentLevel, started: () => started };
+}

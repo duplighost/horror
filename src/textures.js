@@ -58,6 +58,48 @@ function finalize(c, repeat = 1) {
 const cache = {};
 function cached(key, fn) { return cache[key] || (cache[key] = fn()); }
 
+export function stainTexture(seed = 1, tint = '#2b120f') {
+  return cached(`stain:${seed}:${tint}`, () => {
+    const S = 256, [c, ctx] = canvas(S);
+    const rnd = mulberry32(seed * 997 + 17);
+    ctx.clearRect(0, 0, S, S);
+    const hex = tint.startsWith('#') ? tint.slice(1) : '2b120f';
+    const tr = parseInt(hex.slice(0, 2), 16) || 43;
+    const tg = parseInt(hex.slice(2, 4), 16) || 18;
+    const tb = parseInt(hex.slice(4, 6), 16) || 15;
+    const rgba = (a) => `rgba(${tr},${tg},${tb},${a})`;
+
+    const fillBlob = (x, y, rx, ry, alpha) => {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
+      g.addColorStop(0, rgba(alpha));
+      g.addColorStop(0.65, rgba(alpha * 0.38));
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.save();
+      ctx.translate(x, y); ctx.rotate((rnd() - 0.5) * Math.PI);
+      ctx.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, Math.max(rx, ry), 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    };
+
+    for (let i = 0; i < 13; i++) {
+      fillBlob(S * (0.25 + rnd() * 0.5), S * (0.22 + rnd() * 0.56), 18 + rnd() * 70, 10 + rnd() * 42, 0.16 + rnd() * 0.22);
+    }
+    ctx.strokeStyle = rgba(0.22);
+    for (let i = 0; i < 22; i++) {
+      const x = rnd() * S, y = rnd() * S;
+      ctx.lineWidth = 1 + rnd() * 3;
+      ctx.beginPath(); ctx.moveTo(x, y);
+      ctx.bezierCurveTo(x + (rnd() - 0.5) * 40, y + rnd() * 45, x + (rnd() - 0.5) * 60, y + rnd() * 85, x + (rnd() - 0.5) * 80, y + rnd() * 120);
+      ctx.stroke();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = aniso();
+    return tex;
+  });
+}
+
 // --- forest ground: wet earth, scattered rot leaves --------------------------
 export function groundTexture() {
   return cached('ground', () => {
@@ -231,6 +273,7 @@ export function fleshTexture() {
 
 // --- a single staring portrait (faint, only resolves under the flashlight) ---
 export function portraitTexture(seed = 1) {
+  return cached(`portrait:${seed}`, () => {
   const S = 256, [c, ctx] = canvas(S);
   ctx.fillStyle = '#0b0a08'; ctx.fillRect(0, 0, S, S);
   const fbm = makeNoise(seed * 17 + 3);
@@ -267,6 +310,7 @@ export function portraitTexture(seed = 1) {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = aniso();
   return t;
+  });
 }
 
 // --- a sclera: pale, wet, threaded with burst red veins ----------------------
@@ -307,6 +351,7 @@ export function eyeballTexture() {
 
 // --- soft round sprite used for dust, embers, eyes in the dark ---------------
 export function softDot(color = '#ffffff') {
+  return cached(`soft:${color}`, () => {
   const S = 64, [c, ctx] = canvas(S);
   const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
   g.addColorStop(0, color); g.addColorStop(0.25, color);
@@ -315,4 +360,5 @@ export function softDot(color = '#ffffff') {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
+  });
 }

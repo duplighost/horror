@@ -36,10 +36,10 @@ export class InteractionManager {
     const it = this.focused;
     if (!it) return false;
     if (it.canUse && !it.canUse(ctx)) {
-      // locked — a dry rattle and a flinch, no words
+      // locked — the classic handle-rattle + dull thud, and a flinch, no words
       if (performance.now() - this._lockedRattle > 400) {
         this._lockedRattle = performance.now();
-        this.audio.creak(it.pos); ctx.player.addShake(0.12);
+        this.audio.lockedDoor(it.pos); ctx.player.addShake(0.12);
       }
       return false;
     }
