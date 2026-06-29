@@ -39,13 +39,19 @@ if (!canvas) {
 
 // --- renderer ---
 let renderer;
+function makeRenderer(power) {
+  return new THREE.WebGLRenderer({ canvas, antialias: false, stencil: false, powerPreference: power });
+}
 try {
-  renderer = new THREE.WebGLRenderer({
-    canvas, antialias: false, stencil: false, powerPreference: 'high-performance',
-  });
+  renderer = makeRenderer('high-performance');
 } catch (err) {
-  showFatal('WebGL failed', 'Marrow needs WebGL to draw the dark. Try a current browser with hardware acceleration enabled.');
-  throw err;
+  // A reload right after a GPU reset can transiently fail high-performance (it
+  // forces the discrete GPU). Fall back to the default adapter before giving up.
+  try { renderer = makeRenderer('default'); }
+  catch (err2) {
+    showFatal('WebGL failed', 'Marrow needs WebGL to draw the dark. Try a current browser with hardware acceleration enabled.');
+    throw err2;
+  }
 }
 renderer.setPixelRatio(Quality.pixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -163,6 +169,18 @@ function loadLevel(name, opts = {}) {
   Audio.setZone(name);
 
   if (level.onEnter) level.onEnter(ctx);
+
+  // Pre-compile EVERY shader for this level + the Presence now, during the black
+  // load fade. Otherwise three.js compiles each material synchronously the first
+  // time it renders mid-game — and the creature's physical-material shader (or a
+  // scare effect) compiling on first appearance is a hard frame freeze, long
+  // enough that the browser's GPU watchdog can kill the WebGL context. compile()
+  // walks the whole scene (incl. the invisible creature), and compileAsync does
+  // it off the main thread via KHR_parallel_shader_compile, so there's no stall.
+  try {
+    if (renderer.compileAsync) renderer.compileAsync(scene, player.camera).catch(() => {});
+    else renderer.compile(scene, player.camera);
+  } catch (e) { /* never let a warm-up failure break the load */ }
 }
 
 function go(name, opts = {}) {
@@ -310,16 +328,19 @@ function glWatchdog() {
 let fpsAccum = 0, fpsFrames = 0, degradeStep = 0;
 function governor(dt) {
   fpsAccum += dt; fpsFrames++;
-  if (fpsAccum >= 1.0) {
+  // Check often and with headroom so a struggling machine is rescued BEFORE a
+  // long frame can hang the GPU — pixel-ratio first (the per-pixel post pass is
+  // the biggest cost), then cut extras, then draw distance.
+  if (fpsAccum >= 0.6) {
     const fps = fpsFrames / fpsAccum; fpsAccum = 0; fpsFrames = 0;
-    if (fps < 38 && degradeStep < 3) {
+    if (fps < 46 && degradeStep < 4) {
       degradeStep++;
-      if (degradeStep === 1 && renderer.shadowMap.enabled) { renderer.shadowMap.enabled = false; player.flashlight.castShadow = false; }
-      else if (degradeStep === 2) { const pr = Math.max(0.75, renderer.getPixelRatio() * 0.8); renderer.setPixelRatio(pr); post.setSize(window.innerWidth, window.innerHeight); }
-      else if (degradeStep === 3) {
-        Quality.fogDensityScale = 1.15;
+      if (degradeStep === 1) { const pr = Math.max(0.8, renderer.getPixelRatio() * 0.82); renderer.setPixelRatio(pr); post.setSize(window.innerWidth, window.innerHeight); }
+      else if (degradeStep === 2) { if (motes) { scene.remove(motes); motes = null; } renderer.shadowMap.enabled = false; }
+      else if (degradeStep === 3) { const pr = Math.max(0.62, renderer.getPixelRatio() * 0.8); renderer.setPixelRatio(pr); post.setSize(window.innerWidth, window.innerHeight); }
+      else if (degradeStep === 4) {
+        Quality.fogDensityScale = 1.3;
         if (scene.fog && currentLevel) scene.fog.density = currentLevel.fog.density * Quality.fogDensityScale;
-        if (motes) { scene.remove(motes); motes = null; }
       }
     }
   }

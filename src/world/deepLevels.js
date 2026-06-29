@@ -26,8 +26,14 @@ function rng(seed) {
   };
 }
 
+// Share identical decoration materials WITHIN a level so we compile ~15 shaders
+// instead of ~230. Cleared per build (buildDeepLevel) so nothing leaks across
+// levels or gets disposed out from under the next one. Safe because mat()
+// results are never mutated at runtime (only inline-built materials are).
+let _matCache = {};
 function mat(color, roughness = 0.85, metalness = 0.0, emissive = 0x000000, emissiveIntensity = 0) {
-  return new THREE.MeshStandardMaterial({ color, roughness, metalness, emissive, emissiveIntensity });
+  const k = `${color}|${roughness}|${metalness}|${emissive}|${emissiveIntensity}`;
+  return _matCache[k] || (_matCache[k] = new THREE.MeshStandardMaterial({ color, roughness, metalness, emissive, emissiveIntensity }));
 }
 
 const detailMatCache = {};
@@ -48,12 +54,16 @@ function colliderBox(field, minx, minz, maxx, maxz, tag = 0) {
   field.addBox(Math.min(minx, maxx), Math.min(minz, maxz), Math.max(minx, maxx), Math.max(minz, maxz), tag);
 }
 
-function wall(group, field, x, z, sx, sz, h, material, tag = 2) {
+function wall(group, field, x, z, sx, sz, h, material, tag = 2, dress = true) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(sx, h, sz), material);
   m.position.set(x, h / 2, z);
   m.castShadow = true; m.receiveShadow = true;
   group.add(m);
-  if (material.userData?.detailSpec) dressWall(group, material.userData.detailSpec, x, z, sx, sz, h);
+  // Dressing (trim rails, panels, per-theme art) is ~15 sub-meshes + several
+  // materials PER wall. With a full maze that's thousands of objects and hundreds
+  // of shaders — enough to hang the GPU on load. So only the open-room / corridor
+  // "feature" walls get dressed; the maze interior stays plain textured.
+  if (dress && material.userData?.detailSpec) dressWall(group, material.userData.detailSpec, x, z, sx, sz, h);
   colliderBox(field, x - sx / 2, z - sz / 2, x + sx / 2, z + sz / 2, tag);
   return m;
 }
@@ -638,7 +648,7 @@ function decorateConservatory(group, field, flames, animated, spec, rand, ctx, m
       bed.position.set(x, 0.84, z); bed.castShadow = true; group.add(bed);
     }
   }
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < 8; i++) {
     const x = -11 + rand() * 22, z = OPEN.zFar + 2 + rand() * 24;
     const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.48, 0.62, 12), terracotta);
     pot.position.set(x, 0.31, z);
@@ -662,7 +672,7 @@ function decorateConservatory(group, field, flames, animated, spec, rand, ctx, m
       group.add(frond);
     }
   }
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 10; i++) {
     const vine = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.028, 1.8 + rand() * 1.8, 5), bark);
     vine.position.set(-12 + rand() * 24, 4.4 - rand() * 0.6, -18 + rand() * 24);
     vine.rotation.z = (rand() - 0.5) * 0.7;
@@ -786,7 +796,7 @@ function decorateNursery(group, field, flames, animated, spec, rand, ctx) {
     crib.rotation.y = (rand() - 0.5) * 0.2;
     group.add(crib); field.addCircle(crib.position.x, crib.position.z, 0.85);
   }
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < 8; i++) {
     const b = new THREE.Mesh(new THREE.BoxGeometry(0.26 + rand() * 0.25, 0.26, 0.26 + rand() * 0.25), toyMat);
     b.position.set(-7 + rand() * 14, 0.13, -3 - rand() * 12);
     b.rotation.y = rand() * Math.PI;
@@ -904,7 +914,7 @@ function decorateGallery(group, field, flames, animated, spec, rand, ctx) {
     chair.rotation.y = Math.PI;
     group.add(chair);
   }
-  for (let i = 0; i < 11; i++) {
+  for (let i = 0; i < 8; i++) {
     const man = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.8, 4, 8), mat(0x141114, 0.8, 0.0));
     body.position.y = 1.0; man.add(body);
@@ -1089,10 +1099,11 @@ function addRouteWall(group, field, wallsMade, x, y, dir, cols, h, material) {
         : `V:${x + 1}:${y}`;
   if (wallsMade.has(key)) return;
   wallsMade.add(key);
-  if (dir.name === 'N') wall(group, field, cx, cz + CELL / 2, CELL, TH, h, material);
-  else if (dir.name === 'S') wall(group, field, cx, cz - CELL / 2, CELL, TH, h, material);
-  else if (dir.name === 'E') wall(group, field, cx + CELL / 2, cz, TH, CELL, h, material);
-  else wall(group, field, cx - CELL / 2, cz, TH, CELL, h, material);
+  // maze interior walls are NOT dressed (dress=false) — there are too many of them
+  if (dir.name === 'N') wall(group, field, cx, cz + CELL / 2, CELL, TH, h, material, 2, false);
+  else if (dir.name === 'S') wall(group, field, cx, cz - CELL / 2, CELL, TH, h, material, 2, false);
+  else if (dir.name === 'E') wall(group, field, cx + CELL / 2, cz, TH, CELL, h, material, 2, false);
+  else wall(group, field, cx - CELL / 2, cz, TH, CELL, h, material, 2, false);
 }
 
 function routeFrame(path, i, cols) {
@@ -1553,6 +1564,7 @@ function materialSet(spec) {
 }
 
 function buildDeepLevel(spec, ctx) {
+  _matCache = {};                    // fresh shared-material cache for this level
   const group = new THREE.Group();
   const field = new ColliderField(CELL);
   const rand = rng(spec.seed * 17);

@@ -211,7 +211,9 @@ export class Entity {
       this.legs.push(pivot);
     }
 
-    g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+    // The Presence does not cast shadows (the torch reveals it directly). Cheap,
+    // and future-proof if shadows are ever switched on.
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.frustumCulled = false; } });
   }
 
   addToScene(scene) { scene.add(this.group); }
