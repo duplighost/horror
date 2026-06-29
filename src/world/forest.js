@@ -229,6 +229,9 @@ export function buildForest(ctx) {
   // --- the shrine + iron key ---
   const sh = makeShrine(); sh.position.set(shrine.x, 0, shrine.z); group.add(sh);
   field.addCircle(shrine.x, shrine.z, 0.7);
+  // a votive flame on the shrine lights the key (which no longer carries its own
+  // light) and reads as a beacon at the end of the wisp trail
+  const shrineFlame = makeFlame(0xffc066, 0.7, 5.5); shrineFlame.position.set(shrine.x, 0.62, shrine.z); group.add(shrineFlame); flames.push(shrineFlame);
   const key = makeKey('iron'); key.position.set(shrine.x, 0.78, shrine.z); group.add(key);
   ctx.interactables.push({
     object: key, pos: new THREE.Vector3(shrine.x, 0.9, shrine.z), radius: 1.7, once: true, focusable: true,

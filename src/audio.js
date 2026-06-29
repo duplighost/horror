@@ -817,8 +817,13 @@ export const Audio = (() => {
     // scheduleBreath so calm is genuinely silent. stress decays on its own.
     if (breath.on) {
       breath.stress = Math.max(0, breath.stress - dt * 0.5);
-      const target = Math.min(0.9, tension * 0.8 + breath.stress);
-      breath.gain.gain.setTargetAtTime(target, now(), 0.4);
+      // Don't re-drive the breath level while the ending is fading it out, or it
+      // climbs straight back up every frame and the player keeps gasping through
+      // the climactic silence (breath bypasses the master bus the fade ramps).
+      if (!breath._fading) {
+        const target = Math.min(0.9, tension * 0.8 + breath.stress);
+        breath.gain.gain.setTargetAtTime(target, now(), 0.4);
+      }
       scheduleBreath();
     }
   }
@@ -870,7 +875,7 @@ export const Audio = (() => {
   // not on the next scheduled inhale (which could be seconds away).
   function bumpBreath(amount = 0.5) {
     breath.stress = Math.min(1, Math.max(breath.stress, amount));
-    if (breath.on && ctx) {
+    if (breath.on && ctx && !breath._fading) {
       if (breath.gain) breath.gain.gain.setTargetAtTime(Math.min(0.9, tension * 0.8 + breath.stress), now(), 0.05);
       breath.next = Math.min(breath.next, now() + 0.03);   // catch your breath immediately
     }
@@ -881,6 +886,11 @@ export const Audio = (() => {
   function fadeOut(time = 2) {
     if (master) master.gain.setTargetAtTime(0.0001, now(), time / 3);
     if (revGain) revGain.gain.setTargetAtTime(0.0001, now(), time / 3);
+    // breath bypasses master/muffle (so gasps stay crisp when stunned), so the
+    // master fade alone leaves it audible — ramp it down here and latch _fading
+    // so the per-frame drive in update() doesn't fight the fade.
+    breath._fading = true;
+    if (breath.gain) breath.gain.gain.setTargetAtTime(0.0001, now(), time / 3);
   }
   function fadeIn(time = 3) { if (master) { master.gain.cancelScheduledValues(now()); master.gain.setTargetAtTime(0.9, now(), time / 3); } }
 
@@ -892,7 +902,7 @@ export const Audio = (() => {
     if (bed.gain) bed.gain.gain.setTargetAtTime(bed.base ?? 0.38, now(), 0.5);   // undo any ducking
     if (revGain) revGain.gain.setTargetAtTime(0.62, now(), 0.5);                  // restore reverb after a fadeOut
     heart.spike = 0; heart.rate = 60;
-    if (breath.gain) { breath.stress = 0; breath.gain.gain.setTargetAtTime(0, now(), 0.4); }
+    if (breath.gain) { breath.stress = 0; breath._fading = false; breath.gain.gain.setTargetAtTime(0, now(), 0.4); }
     tension = 0; targetTension = 0.12;
     fadeIn(2.5);
   }

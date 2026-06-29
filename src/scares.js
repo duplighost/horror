@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Entity } from './entity.js';
-import { Audio } from './audio.js?v=graphics-terror-detail';
+import { Audio } from './audio.js?v=nav-fear-polish';
 const REDUCED_MOTION = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // The Director decides when to frighten you. It owns the Presence, runs the

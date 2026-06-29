@@ -28,7 +28,7 @@ export function buildMansion(ctx) {
   const flames = [];
 
   const cols = 7, rows = 7;
-  const maze = generateMaze(cols, rows, 13, 0.35);   // braided -> loops
+  const maze = generateMaze(cols, rows, 13, 0.5);   // heavily braided -> loops, few dead-end traps
   const cells = maze.cells;
 
   // --- floor & ceiling ---

@@ -347,18 +347,18 @@ function addPathTrail(group, path, cols, spec) {
     : spec.name === 'nursery' ? 0x6a253e
     : spec.name === 'library' ? 0x30214c
     : 0x255a4a;
-  // A faint directional sheen, not a runway. Dimmer the deeper you are, so the
-  // late levels make you actually work to find your way (and feel more lost).
-  const depth01 = THREE.MathUtils.clamp((spec.index - 4) / 5, 0, 1);
+  // A continuous directional sheen on the floor along the solution path — a
+  // second, always-on layer of guidance under the embers so the way reads even
+  // through fog or when an ember is briefly out of the lit pool. Constant
+  // brightness at every depth (the maze is the backdrop, not the test).
   const trailMat = new THREE.MeshStandardMaterial({
     color,
     roughness: spec.surface === 'wet' ? 0.22 : 0.78,
     metalness: spec.surface === 'wet' ? 0.28 : 0.02,
     emissive: spec.guidance,
-    emissiveIntensity: 0.032 * (1 - depth01 * 0.6),
+    emissiveIntensity: 0.06,
   });
   for (let i = 1; i < path.length; i++) {
-    if (i % 2 === 0) continue;                 // intermittent: a hint, not a line
     const [ax, ay] = path[i - 1];
     const [bx, by] = path[i];
     const x1 = wx(ax, cols), z1 = wz(ay);
@@ -566,11 +566,15 @@ function wz(y) { return MAZE_Z - y * CELL; }
 function addGuidance(group, flames, path, cols, color, depth01 = 0) {
   // Embers mark the way AND are your main light in the maze — without enough of
   // them you wander into pitch black and get lost (the flashlight only lights
-  // where you aim it). So keep a followable trail: one on every path cell, only
-  // a touch dimmer/smaller the deeper you go.
-  const scale = 0.72 - depth01 * 0.14;
-  const reach = 7.0 - depth01 * 1.2;
-  const intensity = 0.62 - depth01 * 0.1;
+  // where you aim it). The maze is meant to be the BACKDROP, not the challenge:
+  // the breadcrumb chain to the key must be unmistakable in every wing, and
+  // BRIGHTEST exactly where players got most lost before (deep). So the trail is
+  // bright, large, and constant at all depths — never dimmed by how far down you
+  // are. (All these embers are pooled afterward, so the live light count stays
+  // tiny and constant — no compile stalls.)
+  const scale = 0.82;
+  const reach = 8.5;
+  const intensity = 0.74;
   for (let i = 1; i < path.length; i++) {
     const [x, y] = path[i];
     const f = makeFlame(color, intensity, reach);
@@ -1477,37 +1481,37 @@ function addMazeAndExit(group, field, flames, animated, spec, rand, ctx, materia
 
 const SPECS = {
   conservatory: {
-    index: 4, name: 'conservatory', next: 'library', seed: 5017, cols: 7, rows: 5, braid: 0.50,
+    index: 4, name: 'conservatory', next: 'library', seed: 5017, cols: 7, rows: 5, braid: 0.55,
     key: 'glasskey', keyTone: 'glass', guidance: 0x7affcc, focusColor: 0x68ffc4, h: 5.4, mazeH: 3.6,
     wall: 0x426e60, trim: 0x162520, floor: 'stone', mazeFloor: 'stone', linearFloor: 'stone',
     ceiling: 0x030807, clutter: 0.46, linear: 18, surface: 'wet',
   },
   library: {
-    index: 5, name: 'library', next: 'nursery', seed: 6129, cols: 7, rows: 6, braid: 0.44,
+    index: 5, name: 'library', next: 'nursery', seed: 6129, cols: 7, rows: 6, braid: 0.60,
     key: 'inkkey', keyTone: 'ink', guidance: 0xb492ff, focusColor: 0x9783ff, h: 4.4, mazeH: 3.2,
     wall: 0x2a1710, trim: 0x1b0f08, floor: 'wood', mazeFloor: 'wood', linearFloor: 'wood',
     ceiling: 0x060403, clutter: 0.44, linear: 19, surface: 'dry',
   },
   nursery: {
-    index: 6, name: 'nursery', next: 'bathhouse', seed: 7031, cols: 7, rows: 7, braid: 0.40,
+    index: 6, name: 'nursery', next: 'bathhouse', seed: 7031, cols: 7, rows: 7, braid: 0.64,
     key: 'rosekey', keyTone: 'rose', guidance: 0xff7aa5, focusColor: 0xff83aa, h: 4.0, mazeH: 3.0,
     wall: 0x2b1724, trim: 0x211018, floor: 'wood', mazeFloor: 'wood', linearFloor: 'wood',
     ceiling: 0x070305, clutter: 0.40, linear: 18, surface: 'dry',
   },
   bathhouse: {
-    index: 7, name: 'bathhouse', next: 'gallery', seed: 8843, cols: 7, rows: 7, braid: 0.34,
+    index: 7, name: 'bathhouse', next: 'gallery', seed: 8843, cols: 7, rows: 7, braid: 0.68,
     key: 'porcelainkey', keyTone: 'porcelain', guidance: 0x8eefff, focusColor: 0x9df2ff, h: 4.3, mazeH: 2.85,
     wall: 0x14272f, trim: 0x0e1b21, floor: 'stone', mazeFloor: 'stone', linearFloor: 'stone',
     ceiling: 0x04090b, clutter: 0.32, linear: 20, surface: 'wet',
   },
   gallery: {
-    index: 8, name: 'gallery', next: 'chapel', seed: 9451, cols: 7, rows: 7, braid: 0.30,
+    index: 8, name: 'gallery', next: 'chapel', seed: 9451, cols: 7, rows: 7, braid: 0.72,
     key: 'silverkey', keyTone: 'silver', guidance: 0xff86dc, focusColor: 0xff79d4, h: 4.7, mazeH: 3.4,
     wall: 0x251226, trim: 0x130812, floor: 'wood', mazeFloor: 'wood', linearFloor: 'wood',
     ceiling: 0x050305, clutter: 0.42, linear: 20, surface: 'dry',
   },
   chapel: {
-    index: 9, name: 'chapel', next: 'final', seed: 10007, cols: 7, rows: 8, braid: 0.24,
+    index: 9, name: 'chapel', next: 'final', seed: 10007, cols: 7, rows: 7, braid: 0.76,
     key: 'blackkey', keyTone: 'black', guidance: 0xff5330, focusColor: 0xff2c24, h: 5.8, mazeH: 3.6,
     wall: 0x2a1515, trim: 0x190b0b, floor: 'stone', mazeFloor: 'stone', linearFloor: 'flesh',
     ceiling: 0x070203, clutter: 0.46, linear: 22, surface: 'wet',
@@ -1664,7 +1668,12 @@ function buildDeepLevel(spec, ctx) {
     update,
     onEnter: (c) => {
       c.audio.setTension(Math.min(1, 0.34 + spec.index * 0.035));
-      if (spec.name === 'chapel') c.director.guard(0, -19);
+      // NB: chapel used to call director.guard(0,-19) here, which left the single
+      // shared Presence permanently visible at the maze mouth — and _updateHunt
+      // only begins a stalk when the Presence is free. That silently suppressed
+      // the chapel's whole Hunt (its highest intensity, 0.92) for the entire
+      // traversal. Removed so the deepest level actually hunts you; the threshold
+      // guardian on the key/door still delivers the "walk up to it" dread.
     },
   };
 }

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 const REDUCED_MOTION = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-import { CFG, Quality } from './config.js?v=graphics-terror-detail';
+import { CFG, Quality } from './config.js?v=nav-fear-polish';
 
 // First-person body + camera + flashlight. Movement is velocity-based with
 // acceleration/friction for weight, axis-resolved against the active collider

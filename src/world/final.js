@@ -173,7 +173,13 @@ export function buildFinal(ctx) {
     canUse: () => true,
     onUse: (state, c) => {
       if (ended) return; ended = true;
-      group.remove(relic);
+      // Hide the relic but KEEP its PointLight in the scene (driven to 0 in
+      // update once taken). Removing the light here would drop the scene's
+      // light count and force a full shader recompile right as the ending
+      // detonates — a freeze at the worst possible moment.
+      relic.userData.taken = true;
+      relic.userData.light.intensity = 0;
+      relic.traverse((o) => { if (o.isMesh) o.visible = false; });
       c.director.dismissGuardian('shriekHard');   // the altar guardian folds away AS the ending detonates — one event
       c.director.beginEnding(relicPos.clone(), eye);
     },
@@ -198,8 +204,9 @@ export function buildFinal(ctx) {
       cd.spr.scale.set(0.08 + n * 0.02, 0.15 + n * 0.04, 1);
       cd.spr.material.opacity = 0.75 + n * 0.25;
     }
-    // relic pulse
-    if (relic.parent) {
+    // relic pulse (stops once taken; the light object stays at 0 so the count
+    // never changes)
+    if (relic.parent && !relic.userData.taken) {
       const k = 1 + Math.sin(t * 2.4) * 0.12;
       relic.scale.setScalar(k); relic.rotation.y += dt * 0.4;
       relic.userData.light.intensity = 10 + Math.sin(t * 6) * 3;

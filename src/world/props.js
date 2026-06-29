@@ -26,7 +26,12 @@ export function makeKey(tone = 'iron') {
   };
   const color = colors[tone] || colors.iron;
   const emissive = emis[tone] || emis.iron;
-  const m = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: tone === 'bone' || tone === 'porcelain' ? 0.1 : 0.8, emissive, emissiveIntensity: 0.6 });
+  // Strong self-emissive + an additive glow sprite so the key reads in the dark
+  // on its own — WITHOUT a dedicated PointLight. A per-key PointLight that gets
+  // removed when you pick the key up would change the scene's light count and
+  // force three.js to recompile every shader that frame: the "freeze when I grab
+  // the key" stutter. The guidance trail already lands you right on it.
+  const m = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: tone === 'bone' || tone === 'porcelain' ? 0.1 : 0.8, emissive, emissiveIntensity: 1.05 });
   const bow = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.014, 8, 16), m); g.add(bow);
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.16, 8), m);
   shaft.rotation.z = Math.PI / 2; shaft.position.x = 0.1; g.add(shaft);
@@ -34,7 +39,8 @@ export function makeKey(tone = 'iron') {
     const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.035, 0.012), m);
     tooth.position.set(0.16 - i * 0.03, -0.022, 0); g.add(tooth);
   }
-  const light = new THREE.PointLight(color, 9.0, 4.5, 2.0); g.add(light);
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: softDot('#ffffff'), color, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }));
+  halo.scale.set(0.6, 0.6, 1); halo.position.set(0.08, 0, 0); g.add(halo);
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   g.userData.spin = true;
   return g;

@@ -1,12 +1,12 @@
 import * as THREE from 'three';
-import { Quality, CFG, IS_TOUCH } from './config.js?v=graphics-terror-detail';
+import { Quality, CFG, IS_TOUCH } from './config.js?v=nav-fear-polish';
 import { setTextureRenderer, softDot } from './textures.js';
-import { Audio } from './audio.js?v=graphics-terror-detail';
+import { Audio } from './audio.js?v=nav-fear-polish';
 import { UI } from './ui.js';
 import { createControls } from './controls.js';
-import { Player } from './player.js?v=graphics-terror-detail';
+import { Player } from './player.js?v=nav-fear-polish';
 import { Post } from './post.js';
-import { Director } from './scares.js?v=graphics-terror-detail';
+import { Director } from './scares.js?v=nav-fear-polish';
 import { InteractionManager } from './interaction.js';
 import { flickerFlames } from './world/props.js';
 import { buildForest } from './world/forest.js';

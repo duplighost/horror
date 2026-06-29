@@ -249,6 +249,57 @@ same warm-up treatment.
   — you run into the blood-red portal yourself while chased. `plungeInto` still
   exists in `scares.js` but is now **unused** (left as a reusable transition).
 
+## 6b. This session — navigation, a real freeze fix, scare consistency
+Goal from the user: *polish every level, no weird freezes, and stop the maze
+navigation from being the hard part — the hard part is pushing forward while
+scared, not finding the way.* Verified headless (Playwright/Chromium probe):
+**0 console errors across all 10 levels + the full ending; 0 program recompiles
+on key/relic pickup.**
+- **Navigation is now the backdrop, not the test.** The difficulty used to be
+  *inverted* — it got harder to see/navigate the deeper you went. Fixed:
+  - `addGuidance` (deepLevels): the ember breadcrumb chain is now **bright, large,
+    constant at every depth** (was dimmed by `depth01`). Still pooled → light count
+    unchanged.
+  - `addPathTrail`: the floor sheen is now **continuous and constant** (was
+    every-other-segment and dimmed with depth) — a second always-on guide layer.
+  - `config.js`: softened the punishing deep fog-up/ambient-down ramp (basement→
+    chapel, + a touch on mansion/final). Darkness stays as *mood*; no corridor is
+    an unnavigable void. The FEAR escalates with depth now, not the blindness.
+  - **Braid inverted**: deep specs + mansion are now *more* braided the deeper you
+    go (conservatory 0.55 → chapel 0.76; mansion 0.5), so dead-end traps — the real
+    time-wasters — are rarer late, not commoner. Chapel trimmed 7×8 → 7×7.
+- **Freeze fix (the "freeze when I grab the key" class).** `makeKey()` and
+  `makeRelic()` each held a live `PointLight`; pickup did `group.remove(...)`,
+  which dropped the scene's light count mid-game → three.js recompiles **every**
+  shader that frame → a hard stutter (and, on the relic, right as the ending
+  fires). Fix: **keys carry no PointLight** (strong emissive + an additive halo
+  sprite; the guidance trail lands you on them); the **relic keeps its light**
+  (hidden + driven to 0 on pickup, never removed). Verified: `programs.length`
+  delta **0** on nursery/forest key and the final relic. Only mid-level light
+  events left are scares using cached light-independent `MeshBasicMaterial`.
+- **Chapel Hunt was silently dead.** `chapel.onEnter` called `director.guard(0,-19)`,
+  leaving the single shared Presence permanently visible — and `_updateHunt` only
+  begins a stalk when the Presence is free. So the deepest level (hunt intensity
+  0.92) never actually hunted you during traversal. Removed; verified a chase now
+  begins (`hidden → chase`).
+- **Audio: breath leaked through the ending hush.** Breathing bypasses the master
+  bus (so gasps stay crisp under muffle), so `fadeOut()` missed it and the player
+  kept gasping through the climactic silence. Added a `breath._fading` latch:
+  `fadeOut` silences breath and the per-frame drive stops fighting it; `resetMix`
+  clears it for replay.
+- **Audited clean** (subagent, cross-checked): `collision.js`, `controls.js`
+  (incl. mobile sticks / touchcancel / blur resets), `post.js`, `textures.js`, and
+  every `Audio.*`/`post.*` call site — no missing methods, no leaks, no NaN.
+- **Cache token bumped** `graphics-terror-detail` → `nav-fear-polish` (the
+  versioned entry-module chain) so returning players get the new code.
+- **Re-provisioned the probe**: `playwright-core` (system Chromium at
+  `/opt/pw-browsers/...`, `--use-gl=swiftshader`). Scripts were in the session
+  scratchpad (ephemeral). Swiftshader still can't reproduce a real GPU watchdog —
+  *the user's hardware is the only true freeze test.* Mansion remains the heaviest
+  level (~22 constant point lights, compiled once in the load fade); not a
+  mid-game freeze, but the next candidate if load-stutter is ever reported (pool
+  its flames like the deep levels).
+
 ---
 
 ## 7. Open issues / what the user may ask next
