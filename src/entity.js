@@ -24,6 +24,17 @@ export class Entity {
   constructor() {
     this.group = new THREE.Group();
     this.group.visible = false;
+    // The Presence's two point lights live on a SEPARATE rig that is ALWAYS
+    // visible (intensity 0 when dormant). If they rode on `group`, hiding the
+    // creature would drop the scene's point-light count by 2 — and three.js
+    // bakes that count into every shader, so it would recompile EVERY material
+    // the instant the creature appears or vanishes. That recompile is the
+    // multi-hundred-ms "creature things" freeze. Keep the count constant.
+    this.lightRig = new THREE.Group();
+    // Set while the creature is revealed purely so compileAsync can warm its
+    // shaders (see loadLevel). update() skips entirely so it never animates,
+    // moves, or lights up — it just sits there to be compiled.
+    this._warmup = false;
     this._build();
     this.mode = 'hidden';
     this.pos = new THREE.Vector3();
@@ -110,8 +121,8 @@ export class Entity {
       eye.position.set(e[0], e[1], e[2] + 0.028); tilt.add(eye);
     });
     this.eyeLight = new THREE.PointLight(0xd8ffe8, 0.0, 4.8, 2);
-    this.eyeLight.position.set(0, 0.05, 0.23);
-    tilt.add(this.eyeLight);
+    this.eyeLight.position.set(0.04, 1.95, 0.22);   // on the always-visible rig, at head height
+    this.lightRig.add(this.eyeLight);
 
     // the maw: a vertical gash, with a hanging lower jaw and thin teeth
     const maw = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 10), this.mawMat);
@@ -197,7 +208,7 @@ export class Entity {
     }
     this.chestLight = new THREE.PointLight(0xff2430, 0.0, 3.8, 2);
     this.chestLight.position.set(0, 1.48, 0.2);
-    g.add(this.chestLight);
+    this.lightRig.add(this.chestLight);
 
     // --- legs: thin, bent ---
     this.legs = [];
@@ -216,9 +227,10 @@ export class Entity {
     g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.frustumCulled = false; } });
   }
 
-  addToScene(scene) { scene.add(this.group); }
+  addToScene(scene) { scene.add(this.group); scene.add(this.lightRig); }
 
   spawnAt(x, z, faceX, faceZ, mode = 'idle', opts = {}) {
+    this._warmup = false;            // a real spawn supersedes any warm-up reveal
     this.pos.set(x, 0, z);
     this.group.position.copy(this.pos);
     this.faceToward(faceX ?? x, faceZ ?? (z + 1));
@@ -271,12 +283,16 @@ export class Entity {
   // instant, unconditional — for level unloads / hard resets
   hardHide() { this._hide(); }
   _hide() {
+    this._warmup = false;
     this.group.visible = false;
     this.mode = 'hidden';
     this.crawlMove = false;
     this.vanishing = false;
     this.group.scale.set(1, 1, 1);
     this.group.position.copy(this.pos);
+    // Lights stay in the scene (constant count) but go fully dark.
+    this.eyeLight.intensity = 0;
+    this.chestLight.intensity = 0;
   }
 
   get isVisible() { return this.group.visible; }
@@ -295,7 +311,12 @@ export class Entity {
   }
 
   update(dt, player, field, audio) {
-    if (!this.group.visible) return;
+    if (!this.group.visible || this._warmup) return;
+
+    // Keep the always-visible light rig glued to the body so its eye/chest glow
+    // tracks the creature (the rig never toggles visibility — see constructor).
+    this.lightRig.position.copy(this.group.position);
+    this.lightRig.rotation.y = this.group.rotation.y;
 
     // --- folding away: a convulsion, then it's pulled down into the dark ---
     if (this.vanishing) {
@@ -361,14 +382,14 @@ export class Entity {
       this.faceToward(player.pos.x, player.pos.z);
       let nx = this.pos.x + (dx / (dist || 1)) * this.speed * dt;
       let nz = this.pos.z + (dz / (dist || 1)) * this.speed * dt;
-      if (field) { const r = field.resolve(nx, nz, 0.3); nx = r.x; nz = r.z; }
+      if (field) { const r = field.resolve(nx, nz, 0.42); nx = r.x; nz = r.z; }   // wider clearance so it doesn't embed in walls
       this.pos.set(nx, 0, nz);
       this._stride(dt, this.speed > 2.6 ? 3.2 : 1.7, true);
       // footstep cadence tracks how fast it's moving — a slow stalk plods, a
       // committed chase pounds. This is the sound that tells you it's coming.
       this._stepT += dt;
       const stepGap = THREE.MathUtils.clamp(0.62 - this.speed * 0.06, 0.2, 0.6);
-      if (this._stepT >= stepGap) { this._stepT -= stepGap; audio && audio.footstep(this.pos, this._wetStep); }
+      if (this._stepT >= stepGap) { this._stepT -= stepGap; audio && audio.footstep(this.pos, this._wetStep, true); }   // HEAVY — you hear it coming
       if (dist < 1.0 && this.onReach) { this.onReach(); this.hardHide(); }   // hard-cut behind the caught-blink
     } else if (this.mode === 'guard') {
       this.faceToward(player.pos.x, player.pos.z);

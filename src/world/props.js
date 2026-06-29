@@ -94,9 +94,77 @@ export function flickerFlames(list, t) {
     const f = g.userData.flame; if (!f) continue;
     const n = Math.sin(t * 17 + f.seed) * 0.5 + Math.sin(t * 7.3 + f.seed * 2) * 0.5;
     const k = 0.7 + n * 0.35 + Math.random() * 0.06;
-    f.light.intensity = f.base * k;
+    if (f.light) f.light.intensity = f.base * k;   // pooled flames have no own light
     f.spr.scale.set(0.16 + n * 0.03, 0.26 + n * 0.05, 1);
   }
+}
+
+// --- Pooled flame lights ------------------------------------------------------
+// A maze can hold 50-90 embers. Giving each its own PointLight made the scene's
+// live point-light count huge AND variable — three.js bakes that count into
+// every shader (getProgramCacheKey), so a big count means enormous fragment
+// shaders that stall on compile (the "freeze at the start of a level"), and a
+// changing count forces a full recompile. The fix: every ember keeps its cheap
+// glowing SPRITE (so the trail is still followable and the maze isn't pitch
+// black), but the real lights come from a small FIXED pool that the nearest
+// embers borrow each frame. Constant, tiny light count → compile once, no stalls.
+
+// Strip the dedicated light off each flame, remembering what it was.
+export function poolifyFlames(flames) {
+  const pooled = [];
+  for (const g of flames) {
+    const f = g.userData.flame; if (!f || !f.light) continue;
+    f.color = f.light.color.getHex();
+    f.dist = f.light.distance;
+    g.remove(f.light);
+    f.light = null;
+    f.pooled = true;
+    pooled.push(g);
+  }
+  return pooled;   // hand back the list to feed updateFlamePool
+}
+
+// A fixed set of "rover" lights shared by all of a level's pooled embers.
+export function makeFlamePool(count = 12) {
+  const group = new THREE.Group();
+  const lights = [];
+  for (let i = 0; i < count; i++) {
+    const L = new THREE.PointLight(0xffaa44, 0, 7, 2.0);
+    L.castShadow = false;
+    group.add(L);
+    lights.push(L);
+  }
+  group.userData.poolLights = lights;
+  return group;
+}
+
+const _poolScratch = [];
+// Lend each rover to one of the nearest embers, flickering it like the real
+// thing. Embers beyond the rover set just glow as sprites.
+export function updateFlamePool(pooled, poolLights, px, pz, t) {
+  if (!pooled.length) return;
+  const K = poolLights.length;
+  const arr = _poolScratch; arr.length = 0;
+  for (let i = 0; i < pooled.length; i++) {
+    const g = pooled[i], f = g.userData.flame;
+    const dx = g.position.x - px, dz = g.position.z - pz;
+    f._d2 = dx * dx + dz * dz;
+    arr.push(g);
+  }
+  arr.sort((a, b) => a.userData.flame._d2 - b.userData.flame._d2);
+  const n = Math.min(K, arr.length);
+  for (let i = 0; i < n; i++) {
+    const g = arr[i], f = g.userData.flame, L = poolLights[i];
+    L.position.set(g.position.x, g.position.y + 0.05, g.position.z);
+    L.color.setHex(f.color);
+    L.distance = f.dist;
+    const nz = Math.sin(t * 17 + f.seed) * 0.5 + Math.sin(t * 7.3 + f.seed * 2) * 0.5;
+    const k = 0.7 + nz * 0.35;
+    // fade with distance so an ember entering/leaving the rover set never pops
+    const fall = Math.max(0, Math.min(1, 1.15 - Math.sqrt(f._d2) / (f.dist + 0.5)));
+    L.intensity = f.base * k * fall;
+  }
+  for (let i = n; i < K; i++) poolLights[i].intensity = 0;
 }
 
 // --- a portrait whose hollow eyes resolve only when lit ------------------------

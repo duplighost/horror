@@ -74,12 +74,12 @@ export const CFG = {
     // The deep levels ramp fog UP toward the climax (the world closes in as you
     // descend) and each leans on one saturated key colour so they never blur
     // together.
-    conservatory: { fog: 0x0a221b, fogDensity: 0.046, ambient: 0x1d5040, ambientI: 0.50, sky: 0x0a221b },
-    library:      { fog: 0x130c06, fogDensity: 0.055, ambient: 0x4a2c14, ambientI: 0.40, sky: 0x130c06 },
-    nursery:      { fog: 0x160a17, fogDensity: 0.062, ambient: 0x52203a, ambientI: 0.40, sky: 0x160a17 },
-    bathhouse:    { fog: 0x05131a, fogDensity: 0.070, ambient: 0x12525f, ambientI: 0.40, sky: 0x05131a },
-    gallery:      { fog: 0x120611, fogDensity: 0.072, ambient: 0x4a1840, ambientI: 0.36, sky: 0x120611 },
-    chapel:       { fog: 0x14060a, fogDensity: 0.082, ambient: 0x4a1410, ambientI: 0.30, sky: 0x14060a },
+    conservatory: { fog: 0x0a221b, fogDensity: 0.038, ambient: 0x2a6a54, ambientI: 0.58, sky: 0x0a221b },
+    library:      { fog: 0x130c06, fogDensity: 0.046, ambient: 0x5a3620, ambientI: 0.52, sky: 0x130c06 },
+    nursery:      { fog: 0x160a17, fogDensity: 0.052, ambient: 0x5e2742, ambientI: 0.50, sky: 0x160a17 },
+    bathhouse:    { fog: 0x05131a, fogDensity: 0.058, ambient: 0x186470, ambientI: 0.48, sky: 0x05131a },
+    gallery:      { fog: 0x120611, fogDensity: 0.060, ambient: 0x551d49, ambientI: 0.44, sky: 0x120611 },
+    chapel:       { fog: 0x14060a, fogDensity: 0.068, ambient: 0x551812, ambientI: 0.38, sky: 0x14060a },
     final:        { fog: 0x160611, fogDensity: 0.082, ambient: 0x220a18, ambientI: 0.14, sky: 0x160611 },
   },
 

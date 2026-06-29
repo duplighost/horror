@@ -378,11 +378,12 @@ export class Director {
     e.speed = (sees && d < 9) ? (3.3 + intensity * 1.4) : (1.4 + intensity * 0.8);
 
     // If maze walls stall it (no pathfinding, it just slides), and you can't see
-    // it, it "finds another way in" — relocate closer, behind you, out of sight.
-    // So the dread keeps closing in instead of the hunt quietly dying in a corner.
-    if (d < this._huntLastD - 0.15) this._huntStuckT = 0; else this._huntStuckT += dt;
+    // it, it "finds another way in" FAST — relocate closer, behind you, out of
+    // sight — so it isn't left grinding into a wall. Quick, so the clipping the
+    // user saw is at most a brief glimpse, not its whole behaviour.
+    if (d < this._huntLastD - 0.12) this._huntStuckT = 0; else this._huntStuckT += dt;
     this._huntLastD = d;
-    if (this._huntStuckT > 4.5 && !sees && d > 5) { this._repositionHunter(8.5); this._huntStuckT = 0; }
+    if (this._huntStuckT > 1.6 && !sees && d > 3.5) { this._repositionHunter(7.5); this._huntStuckT = 0; }
 
     // put real distance between you and it loses you — a held breath of relief
     if (d > 22) { this._huntLost += dt; if (this._huntLost > 3.2) { Audio.hush(1.3); this._endHunt(); } }

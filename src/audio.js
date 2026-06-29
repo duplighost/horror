@@ -396,7 +396,7 @@ export const Audio = (() => {
   }
 
   // surface: 'dry' | 'wet' | 'leaf'  (legacy boolean true === 'wet')
-  function footstep(pos, surface = 'dry') {
+  function footstep(pos, surface = 'dry', heavy = false) {
     if (!ctx) return;
     if (surface === true) surface = 'wet'; else if (surface === false) surface = 'dry';
     const t = now(); const p = panFor(pos);
@@ -405,13 +405,26 @@ export const Audio = (() => {
     if (surface === 'leaf') { f.type = 'highpass'; f.frequency.value = 700; }
     else { f.type = 'lowpass'; f.frequency.value = surface === 'wet' ? 900 : 1600; }
     const g = ctx.createGain();
-    const peak = surface === 'wet' ? 0.05 : surface === 'leaf' ? 0.045 : 0.04;
-    const dur = surface === 'wet' ? 0.18 : surface === 'leaf' ? 0.14 : 0.1;
+    // The PRESENCE's footsteps are heavy — a wet thud you can hear coming. Much
+    // louder than your own steps, with a low impact so it carries through the dark.
+    const peak = (surface === 'wet' ? 0.05 : surface === 'leaf' ? 0.045 : 0.04) * (heavy ? 3.4 : 1);
+    const dur = (surface === 'wet' ? 0.18 : surface === 'leaf' ? 0.14 : 0.1) * (heavy ? 1.5 : 1);
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(peak, t + 0.005);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     s.connect(f); f.connect(g); g.connect(p.in); p.out.connect(master);
     s.start(t); s.stop(t + 0.2);
+    if (heavy) {                                    // a low body-weight impact + a wet drag tail
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(78, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.14);
+      const og = ctx.createGain();
+      og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.2, t + 0.012); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+      o.connect(og); og.connect(p.in); o.start(t); o.stop(t + 0.26);
+      const drag = noiseSource(false), dgn = ctx.createGain(), lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 500;
+      dgn.gain.setValueAtTime(0.0001, t + 0.05); dgn.gain.exponentialRampToValueAtTime(0.06, t + 0.12); dgn.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+      drag.connect(lp); lp.connect(dgn); dgn.connect(p.in); drag.start(t + 0.05); drag.stop(t + 0.4);
+    }
     if (surface === 'leaf') {                       // a couple of dry crackles
       for (let i = 0; i < 2; i++) {
         const cs = noiseSource(false), cg = ctx.createGain(), hp = ctx.createBiquadFilter();

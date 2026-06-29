@@ -8,8 +8,9 @@ import {
 } from '../textures.js';
 import {
   makeArmchair, makeBed, makeCandelabra, makeChair, makeCouch, makeDoor,
-  makeFireplace, makeFlame, makeGrandPainting, makeGravestone, makeKey,
-  makeMirror, makeRug, makeShelf, makeTable,
+  makeFireplace, makeFlame, makeFlamePool, makeGrandPainting, makeGravestone,
+  makeKey, makeMirror, makeRug, makeShelf, makeTable,
+  poolifyFlames, updateFlamePool,
 } from './props.js';
 
 const CELL = 3.55;
@@ -563,15 +564,16 @@ function wx(x, cols) { return (x - (cols - 1) / 2) * CELL; }
 function wz(y) { return MAZE_Z - y * CELL; }
 
 function addGuidance(group, flames, path, cols, color, depth01 = 0) {
-  // Embers marking the way grow sparser and dimmer the deeper you descend — the
-  // house stops helping you. Always keep one near the start so you're not lost
-  // the instant you arrive.
-  const step = 2 + Math.round(depth01 * 2);          // every 2nd cell early -> every 4th late
-  const scale = 0.6 - depth01 * 0.24;
-  const reach = 5.8 - depth01 * 2.2;
-  for (let i = 1; i < path.length; i += step) {
+  // Embers mark the way AND are your main light in the maze — without enough of
+  // them you wander into pitch black and get lost (the flashlight only lights
+  // where you aim it). So keep a followable trail: one on every path cell, only
+  // a touch dimmer/smaller the deeper you go.
+  const scale = 0.72 - depth01 * 0.14;
+  const reach = 7.0 - depth01 * 1.2;
+  const intensity = 0.62 - depth01 * 0.1;
+  for (let i = 1; i < path.length; i++) {
     const [x, y] = path[i];
-    const f = makeFlame(color, 0.5 - depth01 * 0.18, reach);
+    const f = makeFlame(color, intensity, reach);
     f.position.set(wx(x, cols), 0.2, wz(y));
     f.scale.setScalar(scale);
     group.add(f); flames.push(f);
@@ -1573,7 +1575,25 @@ function buildDeepLevel(spec, ctx) {
   const materials = materialSet(spec);
 
   addOpenRoom(group, field, flames, animated, spec, rand, ctx, materials);
+  // An approach trail down the centre of the open room to the maze mouth, so you
+  // can SEE where to go from the moment you arrive — the open rooms had no
+  // guidance and you'd wander them lost (zone 4 especially).
+  for (const z of [4, -1.5, -7, -12.5, -18]) {
+    const f = makeFlame(spec.guidance, 0.6, 7.5);
+    f.position.set(0, 0.22, z); f.scale.setScalar(0.78);
+    group.add(f); flames.push(f);
+  }
   const dynamic = addMazeAndExit(group, field, flames, animated, spec, rand, ctx, materials);
+
+  // Collapse this level's 40-90 ember lights onto a small shared pool. Every
+  // ember keeps its sprite glow (the followable trail); only the nearest dozen
+  // cast real light, which follows the player. Keeps the scene's point-light
+  // count tiny and CONSTANT so shaders compile once, in the load fade — no
+  // mid-level recompile stalls. (See poolifyFlames in props.js.)
+  const flamePool = makeFlamePool(12);
+  group.add(flamePool);
+  const pooledFlames = poolifyFlames(flames);
+
   const zone = CFG.zones[spec.name];
   const witnessSpot = WITNESS_SPOTS[spec.name];
 
@@ -1596,6 +1616,7 @@ function buildDeepLevel(spec, ctx) {
   } });
 
   function update(dt, t, player) {
+    updateFlamePool(pooledFlames, flamePool.userData.poolLights, player.pos.x, player.pos.z, t);
     player.crawl = dynamic.crawlZones.some((z) => Math.hypot(player.pos.x - z.x, player.pos.z - z.z) < z.r);
     if (dynamic.key.parent) {
       dynamic.key.rotation.y += dt * (1.0 + spec.index * 0.02);

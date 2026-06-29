@@ -174,13 +174,24 @@ function loadLevel(name, opts = {}) {
   // load fade. Otherwise three.js compiles each material synchronously the first
   // time it renders mid-game — and the creature's physical-material shader (or a
   // scare effect) compiling on first appearance is a hard frame freeze, long
-  // enough that the browser's GPU watchdog can kill the WebGL context. compile()
-  // walks the whole scene (incl. the invisible creature), and compileAsync does
-  // it off the main thread via KHR_parallel_shader_compile, so there's no stall.
+  // enough that the browser's GPU watchdog can kill the WebGL context.
+  // compileAsync does it off the main thread via KHR_parallel_shader_compile.
+  //
+  // CRUCIAL: compile() uses traverseVisible, so it SKIPS the creature while it's
+  // hidden — and its shader is light-count-specific, so it must be warmed for
+  // THIS level's exact lighting or it stalls the first time it appears here.
+  // Reveal it far underground (the black fade hides it; its lights can't reach
+  // the player from -60) just long enough to be compiled, then hard-hide it.
+  const presence = director.entity;
+  const revealForWarmup = presence && !presence.group.visible;
+  if (revealForWarmup) { presence._warmup = true; presence.group.position.set(0, -60, 0); presence.group.visible = true; }
+  // Un-reveal only if it's STILL the inert warm-up dummy. If gameplay spawned
+  // the creature for real meanwhile, spawnAt cleared _warmup — leave it alone.
+  const rehide = () => { if (revealForWarmup && presence._warmup) presence.hardHide(); };
   try {
-    if (renderer.compileAsync) renderer.compileAsync(scene, player.camera).catch(() => {});
-    else renderer.compile(scene, player.camera);
-  } catch (e) { /* never let a warm-up failure break the load */ }
+    if (renderer.compileAsync) renderer.compileAsync(scene, player.camera).then(rehide, rehide);
+    else { renderer.compile(scene, player.camera); rehide(); }
+  } catch (e) { rehide(); /* never let a warm-up failure break the load */ }
 }
 
 function go(name, opts = {}) {
@@ -414,5 +425,5 @@ requestAnimationFrame(frame);
 // expose a little for debugging / automated testing — only on an opt-in ?debug flag so the
 // go() level-teleport and mutable scene/director aren't a public surface on the live build.
 if (new URLSearchParams(location.search).has('debug') || location.hash.includes('debug')) {
-  window.__MARROW = { scene, player, director, go, Audio, ctx, interaction, getLevel: () => currentLevel, started: () => started };
+  window.__MARROW = { scene, player, director, go, Audio, ctx, interaction, renderer, getLevel: () => currentLevel, started: () => started };
 }

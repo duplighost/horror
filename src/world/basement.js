@@ -127,7 +127,11 @@ export function buildBasement(ctx) {
   const portalX = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 2.1), portalMat);
   portalX.position.set(ex, 1.05, ez); portalX.rotation.y = Math.PI / 2; group.add(portalX);
   const portalLight = new THREE.PointLight(0xff1020, 10, 10, 2); portalLight.position.set(ex, 1.2, ez); group.add(portalLight);
-  ctx.triggers.push({ x: ex, z: ez, r: 1.3, once: true, onEnter: (c) => { c.director.plungeInto('conservatory'); } });
+  // You are being chased; the only way on is THROUGH the blood-red doorway.
+  // No cinematic takes over here — YOU have to run into it, which is the whole
+  // horror of it (a forced plunge cutscene robbed the moment of that dread).
+  // Stop the chase and hand off; go()'s fade swallows you as you cross.
+  ctx.triggers.push({ x: ex, z: ez, r: 1.3, once: true, onEnter: (c) => { c.director.stopChase(); c.go('conservatory'); } });
 
   // --- reality slips: one-way teleports back into the maze (cooldown'd) ---
   const slipTargets = [[1, 5], [4, 2], [2, 6]];
