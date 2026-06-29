@@ -543,7 +543,12 @@ function farthestBoundary(maze, start) {
   const dist = bfs(maze, start.x, start.y);
   let best = { x: start.x, y: start.y, dist: -1 };
   for (let x = 0; x < maze.cols; x++) for (let y = 0; y < maze.rows; y++) {
-    const boundary = x === 0 || y === 0 || x === maze.cols - 1 || y === maze.rows - 1;
+    // Exclude the entrance edge (y===0). The maze mouth is on that edge, so an
+    // exit cell there makes pickExit return 'N' and the key corridor + locked
+    // door get built NORTH back through the open room — overlapping its geometry,
+    // the guided corridor cut off by the room's far wall. (This silently broke
+    // the nursery and gallery wings.) Exits now always land on the W/E/S edges.
+    const boundary = (x === 0 || x === maze.cols - 1 || y === maze.rows - 1) && y !== 0;
     if (boundary && dist[x][y] > best.dist) best = { x, y, dist: dist[x][y] };
   }
   return best;
@@ -614,10 +619,10 @@ function addObjectInteraction(ctx, group, animated, spec, x, z, kind) {
       c.audio.whisper(new THREE.Vector3(x, 1.2, z));
       c.audio.setTension(Math.min(1, c.audio.tension + 0.16));
       c.post.kick('pulse', 0.55);
-      setTimeout(() => {
+      c.director._after(() => {
         if (Math.random() < 0.55) c.director.peripheral();
         else c.director.lurk(x + (Math.random() < 0.5 ? -3 : 3), z - 3);
-      }, 450);
+      }, 450);   // _after, not setTimeout, so a level change cancels it (no stray apparition next level)
     },
   });
 }
@@ -1425,12 +1430,12 @@ function addMazeAndExit(group, field, flames, animated, spec, rand, ctx, materia
   ctx.triggers.push({ x: fakeX, z: fakeZ, r: 1.4, once: true, onEnter: (c) => {
     c.audio.hush(0.95);
     c.audio.bumpHeart(0.35, 88);
-    setTimeout(() => c.director.witness?.(ghostX, ghostZ, {
+    c.director._after(() => c.director.witness?.(ghostX, ghostZ, {
       life: 3.8,
       dwell: 0.24,
       intensity: 0.58 + spec.index * 0.025,
       hush: false,
-    }), 420);
+    }), 420);   // _after so a level change cancels it
   } });
   for (let i = 1; i <= 5; i++) {
     const lx = kx + exit.x * (CELL / 2 + i * (len / 6));
@@ -1607,16 +1612,16 @@ function buildDeepLevel(spec, ctx) {
   } });
   if (witnessSpot) ctx.triggers.push({ x: witnessSpot.trigger[0], z: witnessSpot.trigger[1], r: 2.25, once: true, onEnter: (c) => {
     c.audio.hush(0.85);
-    setTimeout(() => c.director.witness?.(witnessSpot.spawn[0], witnessSpot.spawn[1], {
+    c.director._after(() => c.director.witness?.(witnessSpot.spawn[0], witnessSpot.spawn[1], {
       life: 5.2,
       dwell: 0.34,
       intensity: witnessSpot.intensity,
       hush: false,
-    }), 320);
+    }), 320);   // _after so a level change cancels it
   } });
   ctx.triggers.push({ x: wx(Math.floor(spec.cols / 2), spec.cols), z: MAZE_Z, r: 1.5, once: true, onEnter: (c) => {
     c.audio.hush(0.9);
-    setTimeout(() => c.director.peripheral(), 650);
+    c.director._after(() => c.director.peripheral(), 650);   // _after so a level change cancels it
   } });
 
   function update(dt, t, player) {

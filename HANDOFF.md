@@ -300,6 +300,35 @@ on key/relic pickup.**
   mid-game freeze, but the next candidate if load-stutter is ever reported (pool
   its flames like the deep levels).
 
+## 6c. This session, round 2 — deep audit fixes (two subagent passes)
+Ran two adversarial bug-hunt agents over the Director/Presence and all
+world/player/maze code. Findings fixed (all re-verified headless: 0 errors, 0
+recompiles on pickup, ending reaches the end card):
+- **Exit corridor + locked door routed into the open room (nursery & gallery).**
+  `farthestBoundary` included the entrance edge (`y===0`), so when the farthest
+  cell landed there `pickExit` returned `'N'` and the key corridor + door were
+  built *north back through the open room* (overlapping geometry; the guided
+  corridor cut off by the room's far wall). Fixed by excluding `y===0`. Verified
+  all six wings now exit cleanly W/E/S with distance ≥17; doors sit well outside
+  the open room (z < −21). This was a genuine "the path is broken" bug.
+- **World-builder scares used raw `setTimeout`, not the Director's cancellable
+  `_after`** (deepLevels.js: the object-interaction follow-up, the fake-corridor
+  witness, the witness-spot, the maze-mouth peripheral; mansion.js: the fake-wall
+  seal-scare). On a level change within the delay window the callback fired a
+  stray apparition / entity-despawn into the *next* level (`reset()` can't cancel
+  raw timers). Routed through `c.director._after`. The mansion seal despawn also
+  got a `mode==='idle'` guard so it can't yank away an in-level guardian.
+- **Basement had no in-maze guidance.** Added a sparse, **sprite-only** blood-ember
+  breadcrumb along the BFS path to the portal — followable dots toward the only
+  way on, costing **zero** point lights (count stays 8) and not flooding the
+  flesh-maze with light. The reality-slips still knock you off the trail.
+- **Cleared with reasoning** (not bugs): Hunt scratch state not in `reset()`
+  (self-heals — only read after `_beginStalk` sets it); `dismissGuardian` mid-hunt
+  (self-heals next frame via `_endHunt`); player soft-lock (flashlight 2.2s
+  watchdog + `reset()`/`loadLevel` force-clear frozen/speedScale/forceLook); maze
+  connectivity (recursive-backtracker + braid never disconnects — checked all
+  seeds); reality-slip targets always on open floor.
+
 ---
 
 ## 7. Open issues / what the user may ask next

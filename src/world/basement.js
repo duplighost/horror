@@ -127,6 +127,38 @@ export function buildBasement(ctx) {
   const portalX = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 2.1), portalMat);
   portalX.position.set(ex, 1.05, ez); portalX.rotation.y = Math.PI / 2; group.add(portalX);
   const portalLight = new THREE.PointLight(0xff1020, 10, 10, 2); portalLight.position.set(ex, 1.2, ez); group.add(portalLight);
+
+  // A faint blood-ember breadcrumb from the cellar to the portal — dim and
+  // sparse so the flesh-maze stays oppressively dark, but you can always see the
+  // next step toward the only way on (the reality-slips still throw you off it).
+  (function emberTrail() {
+    const nbr = [['N', 0, -1], ['S', 0, 1], ['E', 1, 0], ['W', -1, 0]];
+    const path = [];
+    let x = far.cell[0], y = far.cell[1], guard = 0;
+    while ((x !== 0 || y !== 0) && guard++ < cols * rows) {
+      path.push([x, y]);
+      let moved = false;
+      for (const [d, dx, dy] of nbr) {
+        const nx = x + dx, ny = y + dy;
+        if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && cells[x][y][d] && dist[nx][ny] === dist[x][y] - 1) { x = nx; y = ny; moved = true; break; }
+      }
+      if (!moved) break;
+    }
+    for (let i = 2; i < path.length; i += 2) {            // skip the portal cell + cellar; every other step
+      const [px, py] = path[i];
+      if (inCellar(px, py)) continue;
+      const f = makeFlame(0xff3a1a, 0.32, 3.6);
+      // SPRITE-ONLY: strip the point light so the trail is a chain of followable
+      // glowing embers that costs nothing and doesn't flood the flesh-maze with
+      // light (keeps it oppressively dark — and the live light count tiny).
+      const L = f.userData.flame.light;
+      if (L) { f.remove(L); f.userData.flame.light = null; }
+      f.position.set(cw(px) + (rand() - 0.5) * 0.5, 0.32, cw(py) + (rand() - 0.5) * 0.5);
+      f.scale.setScalar(0.55);
+      group.add(f); flames.push(f);
+    }
+  })();
+
   // You are being chased; the only way on is THROUGH the blood-red doorway.
   // No cinematic takes over here — YOU have to run into it, which is the whole
   // horror of it (a forced plunge cutscene robbed the moment of that dread).

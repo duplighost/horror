@@ -306,7 +306,13 @@ export function buildMansion(ctx) {
     ent.spawnAt(fwx - 0.2, cw(0), c.player.pos.x, c.player.pos.z, 'idle', { dwell: 4 });
     fakeBlocker.active = true; fake.material = wallMat;
     c.director.stinger('shriek');
-    setTimeout(() => { fakeBlocker.active = false; ent.despawn(c.audio, true); }, 2800);
+    // _after (cancelled on level change) + a mode guard: only despawn if this is
+    // still OUR idle apparition. If the player reached the basement-door sentinel
+    // in the meantime, the shared Presence is now a 'guard' — don't yank it away.
+    c.director._after(() => {
+      fakeBlocker.active = false;
+      if (ent.mode === 'idle') ent.despawn(c.audio, true);
+    }, 2800);
   }});
 
   // --- chandeliers + blood, for that old-blood-and-dust grandeur ---
