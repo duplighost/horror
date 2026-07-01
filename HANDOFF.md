@@ -329,6 +329,47 @@ recompiles on pickup, ending reaches the end card):
   connectivity (recursive-backtracker + braid never disconnects — checked all
   seeds); reality-slip targets always on open floor.
 
+## 6d. This session, round 3 — distinct maze interiors + the darkness fix
+User feedback: *the deep-level MAZE parts (library, nursery, on) all look the
+same and are pitch black except where the flashlight hits a wall — "no way but to
+follow the wall in circles or wander aimlessly in the dark."* Root causes: the
+maze interior walls are undressed (all zones read identical), off-aim there was
+only ambient + near-zero wall emissive (corridors went black), and the
+flashlight's fill light (`player.lens`) had distance 1.45 (lit nothing) with its
+value hard-coded in update(), overriding the constructor. Designed via a
+multi-agent workflow (6 per-zone identity recipes + a global-lighting engineer +
+2 adversarial critics). All freeze-safe — **emissive + additive sprites + shared
+`mat()` materials cost ZERO point lights.** Verified headless (0 errors, per-level
+count 16/17 ≤18, key/relic pickup delta 0, ending reaches the end card) and by
+before/after screenshots (library went from a *fully black screen* to a readable
+amber corridor with a cold-violet accent).
+- **Per-zone maze emissive** (`materialSet` reads `spec.wallEmis/wallEmisI/
+  floorEmis/floorEmisI`): each wing's undressed corridor walls + floor self-glow
+  in its own colour — never pitch black AND instantly identifiable. Hues diverged
+  per the critics: conservatory yellow-green, library amber(+cold-violet motes),
+  nursery warm rose, bathhouse pure cyan, gallery cold violet-magenta, chapel red.
+- **Per-zone silhouette motif** (`decorateMazeCell`, rewritten): a dim floor-glow
+  sprite on EVERY non-path cell (never-black guarantee) + a distinct motif on a
+  DIFFERENT axis per zone — conservatory hanging vines, library low glowing
+  book-piles, nursery overhead swaying mobiles, bathhouse knee-high cyan grout
+  seams, gallery propped portraits with glowing eyes, chapel overhead bone arches
+  + sparse red votives.
+- **Lens fill light** (`player.js`): distance 1.45→3.4; the hard-coded 1.05 in
+  update() replaced with `this.baseLensIntensity` (6.0) — the omnidirectional
+  "always see your feet + the near wall" light. It's the permanent lens, so
+  tuning it is FREE (no light-count change).
+- **Softened the flashlight** (`config.js`): 980→**560 cd**, angle 0.72→0.80,
+  penumbra 0.64→0.72. The old 980cd core blew near walls to a white blob (the
+  literal *"all I see is the flashlight on the wall"*) and washed out the zone
+  colour. With the new emissive + lens carrying the baseline, the torch is a
+  gentler wider pool that REVEALS the environment instead of nuking it. Verified
+  the set-piece levels didn't go too dark.
+- **Flame pool per-spec** (`spec.poolSize`): 14 for the 7×7 wings, **12 for
+  conservatory** (its domeGlow would push it to 19). Ember reach 8.5→10. Result:
+  17 (deep) / 16 (conservatory) constant point lights.
+- Landmine: the deep-wing budget is now 17-18, near the 18 ceiling. Do NOT add
+  always-on point lights; reuse the pool. Emissive/sprites are free.
+
 ---
 
 ## 7. Open issues / what the user may ask next

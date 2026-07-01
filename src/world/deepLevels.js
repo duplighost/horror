@@ -578,7 +578,7 @@ function addGuidance(group, flames, path, cols, color, depth01 = 0) {
   // are. (All these embers are pooled afterward, so the live light count stays
   // tiny and constant — no compile stalls.)
   const scale = 0.82;
-  const reach = 8.5;
+  const reach = 10.0;   // reach far enough that a lent rover grazes the corridor walls (shows their zone tint), not just the floor
   const intensity = 0.74;
   for (let i = 1; i < path.length; i++) {
     const [x, y] = path[i];
@@ -1012,24 +1012,72 @@ const DECOR = {
   chapel: decorateChapel,
 };
 
+// Give the MAZE INTERIOR its identity + baseline light. Runs on every NON-path
+// cell. Two layers, both freeze-safe (emissive materials + additive sprites +
+// mat()-cached shared materials — ZERO added point lights):
+//   1. a dim zone-tinted floor glow on EVERY non-path cell, so dead-end corridors
+//      are never the pitch black you got lost in;
+//   2. a distinct SILHOUETTE motif on a fraction of cells, on a different axis per
+//      zone (vertical / overhead / low-horizontal / wall-mounted) so no two wings'
+//      corridors read the same.
 function decorateMazeCell(group, field, flames, animated, spec, rand, x, y, cols, isPath) {
-  if (isPath || rand() > spec.clutter) return;
+  if (isPath) return;
   const cx = wx(x, cols) + (rand() - 0.5) * 0.9;
   const cz = wz(y) + (rand() - 0.5) * 0.9;
+
+  // (1) never-pitch-black guarantee: a faint floor pool in the zone's colour
+  addSprite(group, animated, spec.floorGlow, wx(x, cols), 0.16, wz(y), 0.62, 0.14, 'glow');
+
+  // (2) signature motif (sparse)
+  if (rand() > spec.clutter) return;
   if (spec.name === 'conservatory') {
-    const root = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.12, 1.6, 7), new THREE.MeshStandardMaterial({ map: barkTexture(), roughness: 0.95 }));
-    root.position.set(cx, 0.8, cz); root.rotation.z = (rand() - 0.5) * 0.7; group.add(root); field.addCircle(cx, cz, 0.18);
+    // VERTICAL: a drowned vine dangling into the corridor from the dark ceiling
+    const vine = new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 1.5, 4, 6), mat(0x17351f, 0.86, 0.02, 0x0c2e18, 0.30));
+    vine.position.set(cx, spec.mazeH - 0.95, cz); vine.rotation.z = (rand() - 0.5) * 0.5; group.add(vine);
+    if (rand() < 0.6) addSprite(group, animated, '#7dff9a', cx, 1.5 + rand() * 0.6, cz, 0.5, 0.12, 'glow');
   } else if (spec.name === 'library') {
-    const shelf = makeShelf(1.8); shelf.position.set(cx, 0, cz); shelf.rotation.y = rand() * Math.PI; group.add(shelf); field.addCircle(cx, cz, 0.5);
+    // LOW/HORIZONTAL: a spilled pile of glowing amber book-spines on the floor...
+    const bookMat = mat(0x2a160a, 0.8, 0.05, 0x3a1c08, 0.26);
+    for (let b = 0; b < 3; b++) {
+      const book = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.24), bookMat);
+      book.position.set(cx + (rand() - 0.5) * 0.5, 0.05 + b * 0.055, cz + (rand() - 0.5) * 0.4);
+      book.rotation.y = rand() * Math.PI; group.add(book);
+    }
+    // ...threaded with the signature COLD violet mote (the one thing separating library from chapel)
+    addSprite(group, animated, '#b492ff', cx, 1.5 + rand() * 0.6, cz, 0.55, 0.17, 'glow');
   } else if (spec.name === 'nursery') {
-    const chair = makeChair(); chair.position.set(cx, 0, cz); chair.rotation.y = rand() * Math.PI; group.add(chair); field.addCircle(cx, cz, 0.38);
+    // OVERHEAD: a swaying mobile dangling into the beam (nursery's tell — NOT eyes, those are gallery's)
+    const mobile = new THREE.Group();
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.6, 5), mat(0x3b252c, 0.6, 0.2));
+    stem.position.y = -0.3; mobile.add(stem);
+    const charmMat = mat(0x6a2338, 0.8, 0.0, 0x361016, 0.32);
+    for (let c = 0; c < 2; c++) {
+      const charm = new THREE.Mesh(new THREE.IcosahedronGeometry(0.09, 0), charmMat);
+      charm.position.set((c - 0.5) * 0.22, -0.62, 0); mobile.add(charm);
+    }
+    mobile.position.set(cx, spec.mazeH - 0.5, cz);
+    mobile.userData.anim = { type: 'swing', seed: rand() * 30, base: 1 };
+    group.add(mobile); animated.push(mobile);
   } else if (spec.name === 'bathhouse') {
-    addSprite(group, animated, '#9aefff', cx, 0.55, cz, 1.1, 0.13, 'steam');
+    // LOW/HORIZONTAL: a knee-high glowing cyan grout seam + rising steam
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.05, 0.05), mat(0x1c5866, 0.3, 0.4, 0x0e414d, 0.34));
+    seam.position.set(cx, 0.5, cz); seam.rotation.y = rand() * Math.PI; group.add(seam);
+    addSprite(group, animated, '#8eefff', cx, 0.6, cz, 1.0, 0.14, 'steam');
   } else if (spec.name === 'gallery') {
-    const frame = makeGrandPainting(1 + ((x * 3 + y) % 8), 0.7, 1.0);
-    frame.position.set(cx, 1.55, cz); frame.rotation.y = rand() * Math.PI; group.add(frame);
+    // WALL-MOUNTED WATCHER: a propped portrait whose hollow eyes glow at you (eyes HIGH ~1.2m)
+    const portrait = new THREE.Group();
+    const canvas = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.1, 0.02), mat(0x160512, 0.9, 0.0, 0x24081c, 0.14));
+    portrait.add(canvas);
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.84, 1.24, 0.06), mat(0x6a4a1e, 0.45, 0.5));
+    frame.position.z = -0.04; portrait.add(frame);
+    portrait.position.set(cx, 0.86, cz); portrait.rotation.y = rand() * Math.PI * 2; group.add(portrait);
+    addSprite(group, animated, '#ff86dc', cx - 0.08, 1.18, cz, 0.12, 0.6, 'glow');
+    addSprite(group, animated, '#ff86dc', cx + 0.08, 1.18, cz, 0.12, 0.6, 'glow');
   } else {
-    const grave = makeGravestone(); grave.position.set(cx, 0, cz); grave.rotation.y = rand() * Math.PI; group.add(grave); field.addCircle(cx, cz, 0.32);
+    // chapel — OVERHEAD: a bone half-arch ribbing the ceiling; a SPARSE low red votive
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.04, 6, 16, Math.PI), mat(0x8d806e, 0.58, 0.0));
+    arch.position.set(cx, spec.mazeH - 0.35, cz); arch.rotation.set(Math.PI / 2, 0, rand() < 0.5 ? 0 : Math.PI / 2); group.add(arch);
+    if (rand() < 0.45) addSprite(group, animated, '#ff3a1e', cx + (rand() - 0.5) * 0.6, 0.28, cz + (rand() - 0.5) * 0.6, 0.55, 0.3, 'glow');
   }
 }
 
@@ -1489,37 +1537,49 @@ const SPECS = {
     index: 4, name: 'conservatory', next: 'library', seed: 5017, cols: 7, rows: 5, braid: 0.55,
     key: 'glasskey', keyTone: 'glass', guidance: 0x7affcc, focusColor: 0x68ffc4, h: 5.4, mazeH: 3.6,
     wall: 0x426e60, trim: 0x162520, floor: 'stone', mazeFloor: 'stone', linearFloor: 'stone',
-    ceiling: 0x030807, clutter: 0.46, linear: 18, surface: 'wet',
+    ceiling: 0x05130d, clutter: 0.46, linear: 18, surface: 'wet',
+    // maze-interior identity: yellow-green self-glow (kept distinct from bathhouse cyan)
+    wallEmis: 0x123a1a, wallEmisI: 0.20, floorEmis: 0x0a2c18, floorEmisI: 0.13, floorGlow: '#4bd98a', poolSize: 12,
   },
   library: {
     index: 5, name: 'library', next: 'nursery', seed: 6129, cols: 7, rows: 6, braid: 0.60,
     key: 'inkkey', keyTone: 'ink', guidance: 0xb492ff, focusColor: 0x9783ff, h: 4.4, mazeH: 3.2,
     wall: 0x2a1710, trim: 0x1b0f08, floor: 'wood', mazeFloor: 'wood', linearFloor: 'wood',
-    ceiling: 0x060403, clutter: 0.44, linear: 19, surface: 'dry',
+    ceiling: 0x0a0604, clutter: 0.44, linear: 19, surface: 'dry',
+    // maze-interior identity: warm rotting-amber walls + cold violet motes (the only warm zone with a cold accent)
+    wallEmis: 0x3a1c08, wallEmisI: 0.22, floorEmis: 0x1a0c04, floorEmisI: 0.13, floorGlow: '#b48a3a', poolSize: 14,
   },
   nursery: {
     index: 6, name: 'nursery', next: 'bathhouse', seed: 7031, cols: 7, rows: 7, braid: 0.64,
     key: 'rosekey', keyTone: 'rose', guidance: 0xff7aa5, focusColor: 0xff83aa, h: 4.0, mazeH: 3.0,
     wall: 0x2b1724, trim: 0x211018, floor: 'wood', mazeFloor: 'wood', linearFloor: 'wood',
-    ceiling: 0x070305, clutter: 0.40, linear: 18, surface: 'dry',
+    ceiling: 0x1a0810, clutter: 0.40, linear: 18, surface: 'dry',
+    // maze-interior identity: warm peach-rose (deliberately WARMER than gallery's cold violet) + overhead swaying mobiles
+    wallEmis: 0x36121a, wallEmisI: 0.22, floorEmis: 0x220a10, floorEmisI: 0.11, floorGlow: '#d98aa0', poolSize: 14,
   },
   bathhouse: {
     index: 7, name: 'bathhouse', next: 'gallery', seed: 8843, cols: 7, rows: 7, braid: 0.68,
     key: 'porcelainkey', keyTone: 'porcelain', guidance: 0x8eefff, focusColor: 0x9df2ff, h: 4.3, mazeH: 2.85,
     wall: 0x14272f, trim: 0x0e1b21, floor: 'stone', mazeFloor: 'stone', linearFloor: 'stone',
-    ceiling: 0x04090b, clutter: 0.32, linear: 20, surface: 'wet',
+    ceiling: 0x061c22, clutter: 0.32, linear: 20, surface: 'wet',
+    // maze-interior identity: pure cyan (pushed off conservatory's green) + low horizontal grout glow + steam
+    wallEmis: 0x08313f, wallEmisI: 0.21, floorEmis: 0x08313d, floorEmisI: 0.15, floorGlow: '#5ad0e0', poolSize: 14,
   },
   gallery: {
     index: 8, name: 'gallery', next: 'chapel', seed: 9451, cols: 7, rows: 7, braid: 0.72,
     key: 'silverkey', keyTone: 'silver', guidance: 0xff86dc, focusColor: 0xff79d4, h: 4.7, mazeH: 3.4,
     wall: 0x251226, trim: 0x130812, floor: 'wood', mazeFloor: 'wood', linearFloor: 'wood',
-    ceiling: 0x050305, clutter: 0.42, linear: 20, surface: 'dry',
+    ceiling: 0x0a0410, clutter: 0.42, linear: 20, surface: 'dry',
+    // maze-interior identity: cold violet-magenta + framed portraits whose hollow eyes glow at you (eyes HIGH, ~1.2m)
+    wallEmis: 0x2a0a24, wallEmisI: 0.22, floorEmis: 0x1a0612, floorEmisI: 0.12, floorGlow: '#c060b0', poolSize: 14,
   },
   chapel: {
     index: 9, name: 'chapel', next: 'final', seed: 10007, cols: 7, rows: 7, braid: 0.76,
     key: 'blackkey', keyTone: 'black', guidance: 0xff5330, focusColor: 0xff2c24, h: 5.8, mazeH: 3.6,
     wall: 0x2a1515, trim: 0x190b0b, floor: 'stone', mazeFloor: 'stone', linearFloor: 'flesh',
-    ceiling: 0x070203, clutter: 0.46, linear: 22, surface: 'wet',
+    ceiling: 0x0c0203, clutter: 0.46, linear: 22, surface: 'wet',
+    // maze-interior identity: blood-red stone + overhead bone half-arches + SPARSE low red votives (kept sparse so cells still alternate lit/black — dread)
+    wallEmis: 0x2a0806, wallEmisI: 0.20, floorEmis: 0x1a0604, floorEmisI: 0.12, floorGlow: '#d04030', poolSize: 14,
   },
 };
 
@@ -1544,13 +1604,11 @@ function materialSet(spec) {
     : spec.name === 'bathhouse' ? 0.07
     : spec.name === 'chapel' ? 0.06
     : 0.038;
-  const wallEmissive = spec.name === 'chapel' ? 0x180403
-    : spec.name === 'conservatory' ? 0x09231b
-    : spec.name === 'bathhouse' ? 0x06151a
-    : spec.name === 'library' ? 0x100809
-    : spec.name === 'nursery' ? 0x150711
-    : spec.name === 'gallery' ? 0x120512
-    : 0x000000;
+  // Per-spec maze-interior self-glow: makes the undressed corridor walls read in
+  // the zone's own colour WITHOUT a flashlight — this is what gives each maze its
+  // identity and keeps corridors from going pure black off-aim. Emissive costs
+  // zero lights. Values live on each SPEC (wallEmis/wallEmisI).
+  const wallEmissive = spec.wallEmis ?? 0x000000;
   const wallMaterial = new THREE.MeshStandardMaterial({
     map: wallTex,
     bumpMap: wallTex,
@@ -1559,7 +1617,7 @@ function materialSet(spec) {
     roughness: spec.name === 'conservatory' ? 0.32 : spec.name === 'bathhouse' ? 0.42 : 0.88,
     metalness: spec.name === 'conservatory' ? 0.18 : spec.name === 'bathhouse' ? 0.18 : 0.06,
     emissive: wallEmissive,
-    emissiveIntensity: spec.name === 'chapel' ? 0.18 : spec.name === 'conservatory' ? 0.12 : spec.name === 'bathhouse' ? 0.11 : 0.07,
+    emissiveIntensity: spec.wallEmisI ?? 0.07,
   });
   wallMaterial.userData.detailSpec = spec;
   const trimMaterial = mat(spec.trim, 0.72, 0.18);
@@ -1567,7 +1625,7 @@ function materialSet(spec) {
   const floorEmissive = spec.surface === 'wet' ? 0x061417 : spec.name === 'library' ? 0x080407 : spec.name === 'nursery' ? 0x0b0308 : spec.name === 'gallery' ? 0x090308 : 0x000000;
   return {
     floor: new THREE.MeshStandardMaterial({ map: floorTex, bumpMap: floorTex, bumpScale: floorBump, color: 0xffffff, roughness: spec.floor === 'stone' ? 0.24 : 0.68, metalness: spec.floor === 'stone' ? 0.24 : 0.04, emissive: floorEmissive, emissiveIntensity: spec.surface === 'wet' ? 0.08 : 0.035 }),
-    mazeFloor: new THREE.MeshStandardMaterial({ map: mazeTex, bumpMap: mazeTex, bumpScale: mazeBump, color: 0xffffff, roughness: spec.mazeFloor === 'stone' ? 0.28 : 0.66, metalness: spec.mazeFloor === 'stone' ? 0.24 : 0.04, emissive: floorEmissive, emissiveIntensity: spec.surface === 'wet' ? 0.10 : 0.04 }),
+    mazeFloor: new THREE.MeshStandardMaterial({ map: mazeTex, bumpMap: mazeTex, bumpScale: mazeBump, color: 0xffffff, roughness: spec.mazeFloor === 'stone' ? 0.28 : 0.66, metalness: spec.mazeFloor === 'stone' ? 0.24 : 0.04, emissive: spec.floorEmis ?? floorEmissive, emissiveIntensity: spec.floorEmisI ?? (spec.surface === 'wet' ? 0.10 : 0.04) }),
     linearFloor: new THREE.MeshStandardMaterial({ map: linearTex, bumpMap: linearTex, bumpScale: linearBump, color: 0xffffff, roughness: 0.30, metalness: spec.linearFloor === 'wood' ? 0.06 : 0.26, emissive: spec.linearFloor === 'flesh' ? 0x160002 : floorEmissive, emissiveIntensity: spec.linearFloor === 'flesh' ? 0.35 : spec.surface === 'wet' ? 0.11 : 0.045 }),
     wall: wallMaterial,
     trim: trimMaterial,
@@ -1599,7 +1657,7 @@ function buildDeepLevel(spec, ctx) {
   // cast real light, which follows the player. Keeps the scene's point-light
   // count tiny and CONSTANT so shaders compile once, in the load fade — no
   // mid-level recompile stalls. (See poolifyFlames in props.js.)
-  const flamePool = makeFlamePool(12);
+  const flamePool = makeFlamePool(spec.poolSize ?? 12);   // per-spec: 14 for the big wings, 12 for conservatory (its domeGlow keeps it <=18 lights)
   group.add(flamePool);
   const pooledFlames = poolifyFlames(flames);
 

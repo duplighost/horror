@@ -1,12 +1,12 @@
 import * as THREE from 'three';
-import { Quality, CFG, IS_TOUCH } from './config.js?v=nav-fear-polish';
+import { Quality, CFG, IS_TOUCH } from './config.js?v=distinct-mazes';
 import { setTextureRenderer, softDot } from './textures.js';
-import { Audio } from './audio.js?v=nav-fear-polish';
+import { Audio } from './audio.js?v=distinct-mazes';
 import { UI } from './ui.js';
 import { createControls } from './controls.js';
-import { Player } from './player.js?v=nav-fear-polish';
+import { Player } from './player.js?v=distinct-mazes';
 import { Post } from './post.js';
-import { Director } from './scares.js?v=nav-fear-polish';
+import { Director } from './scares.js?v=distinct-mazes';
 import { InteractionManager } from './interaction.js';
 import { flickerFlames } from './world/props.js';
 import { buildForest } from './world/forest.js';

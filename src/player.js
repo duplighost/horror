@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 const REDUCED_MOTION = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-import { CFG, Quality } from './config.js?v=nav-fear-polish';
+import { CFG, Quality } from './config.js?v=distinct-mazes';
 
 // First-person body + camera + flashlight. Movement is velocity-based with
 // acceleration/friction for weight, axis-resolved against the active collider
@@ -101,9 +101,15 @@ export class Player {
     this.flashSpill.castShadow = false;
     this.flashSpill.target = this.flashTarget;
 
-    // a tiny warm lens glow, kept short-range so it does not light walls you
-    // are not actually aiming at.
-    this.lens = new THREE.PointLight(0xffe0c0, 1.15, 1.45, 2);
+    // A warm fill light at the lens. This is the ONE omnidirectional light on the
+    // rig, so it's what keeps the immediate surroundings from being pitch black
+    // when the flashlight cone is aimed elsewhere (the maze corridors used to go
+    // fully black off-aim). Kept short-range so it lights the cell you're in, not
+    // the whole maze — a faint "you can always see your own feet and the near
+    // wall", never a flood that kills the dark. It already lives permanently in
+    // the scene, so tuning it costs ZERO light-count (no shader recompile).
+    this.baseLensIntensity = 6.0;
+    this.lens = new THREE.PointLight(0xffe0c0, this.baseLensIntensity, 3.4, 2);
 
     // the held cone is swayed with a little lag for a handheld feel
     this._aimDir = new THREE.Vector3(0, 0, -1);
@@ -249,7 +255,7 @@ export class Player {
     const inten = this.flashOn ? this.baseIntensity * this.flicker : 0;
     this.flashlight.intensity = inten;
     this.flashSpill.intensity = this.flashOn ? this.baseSpillIntensity * Math.max(0.55, this.flicker) : 0;
-    this.lens.intensity = this.flashOn ? 1.05 * Math.max(0.45, this.flicker) : 0;
+    this.lens.intensity = this.flashOn ? this.baseLensIntensity * Math.max(0.45, this.flicker) : 0;
 
     // --- viewmodel bob/sway (lags the camera, breathes, dims with the torch) ---
     if (this.viewmodel) {

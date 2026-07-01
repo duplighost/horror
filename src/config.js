@@ -55,12 +55,18 @@ export const CFG = {
   breathAmount: 0.015,
 
   // --- Flashlight (physically-based candela units in three r160, decay 2) ---
+  // The hot core is deliberately softened from its old 980cd: at close range an
+  // over-bright core just blows a near wall to a white blob (the "all I see is the
+  // flashlight on the wall" complaint) and washes out the zone's colour. With the
+  // deep levels' new wall/floor emissive + the lens fill carrying the ambient
+  // baseline, the torch can be a gentler, wider pool that reveals the environment
+  // instead of nuking it — while a slightly wider/stronger spill keeps the reach.
   flashlight: {
-    angle: 0.72,          // radians (cone half-angle-ish)
-    penumbra: 0.64,
-    intensity: 980.0,
-    spillIntensity: 330.0,
-    spillAngle: 1.10,
+    angle: 0.80,          // radians (cone half-angle-ish) — a touch wider
+    penumbra: 0.72,       // softer edge, less hard hot-spot
+    intensity: 560.0,     // was 980 — tamer core so near walls read as surfaces, not white blobs
+    spillIntensity: 300.0,
+    spillAngle: 1.18,
     distance: 68,
     color: 0xffeccb,
   },
@@ -76,7 +82,7 @@ export const CFG = {
     // closes in," but only gently — navigation must stay easy; the FEAR escalates,
     // not the blindness. The ambient floor is held high enough that no corridor is
     // ever a pitch-black void you get lost in.
-    conservatory: { fog: 0x0a221b, fogDensity: 0.038, ambient: 0x2a6a54, ambientI: 0.58, sky: 0x0a221b },
+    conservatory: { fog: 0x0a221b, fogDensity: 0.038, ambient: 0x2a6a54, ambientI: 0.50, sky: 0x0a221b },
     library:      { fog: 0x130c06, fogDensity: 0.042, ambient: 0x5a3620, ambientI: 0.56, sky: 0x130c06 },
     nursery:      { fog: 0x160a17, fogDensity: 0.046, ambient: 0x5e2742, ambientI: 0.55, sky: 0x160a17 },
     bathhouse:    { fog: 0x05131a, fogDensity: 0.050, ambient: 0x186470, ambientI: 0.54, sky: 0x05131a },
